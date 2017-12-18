@@ -1,6 +1,6 @@
 {-# LANGUAGE BangPatterns #-}
--- Sorting large vectors with the help of temporary files.
-module Sort where
+-- Miscellaneous vector functions.
+module Vector(sort, sortBy, select) where
 
 import Data.Vector.Storable(Vector)
 import Data.Vector.Storable.Mutable(IOVector)
@@ -12,12 +12,14 @@ import Foreign.Storable
 import Control.Monad
 import System.IO
 import qualified Data.Vector.Algorithms.Intro as Intro
+import Data.Vector.Algorithms.Search
+import System.IO.Unsafe
 
 import Test.QuickCheck
 import qualified Data.List as List
 
-slice :: Int -> [(Int, Int)]
-slice n = from 0
+slices :: Int -> [(Int, Int)]
+slices n = from 0
   where
     k = 1000000
     from m
@@ -26,6 +28,7 @@ slice n = from 0
       where
         m' = (m+k) `min` n
 
+-- Sort a large vector with the help of a temporary files.
 {-# INLINE sort #-}
 sort :: (Ord a, Storable a) => Vector a -> IO (Vector a)
 sort = sortBy compare
@@ -37,7 +40,7 @@ sortBy comp vec =
   withSystemTempFile "sort2" $ \file2 _ -> do
     let
       n = Vector.length vec
-      slices = slice n
+      ss = slices n
 
     -- Create two temporary vectors to ping-pong between
     input  <- unsafeMMapMVector file1 ReadWriteEx (Just (0, n))
@@ -45,7 +48,7 @@ sortBy comp vec =
 
     -- Chop the vector into slices and sort the slices
     hPutStr stderr "sort "
-    forM_ slices $ \(i, n) -> do
+    forM_ ss $ \(i, n) -> do
       hPutStr stderr (show i ++ " ")
       Vector.copy (Mutable.slice i n input) $
         Vector.slice i n vec
@@ -73,7 +76,7 @@ sortBy comp vec =
         ys <- pass input output xs
         passes output minput ys
 
-    passes input output slices <* hPutStrLn stderr ""
+    passes input output ss <* hPutStrLn stderr ""
 
 {-# INLINEABLE merge #-}
 merge :: Storable a => (a -> a -> Ordering) -> Vector a -> Vector a -> IOVector a -> IO ()
@@ -97,6 +100,22 @@ uncons :: Storable a => Vector a -> Maybe (a, Vector a)
 uncons vec
   | Vector.null vec = Nothing
   | otherwise = Just (Vector.unsafeHead vec, Vector.unsafeTail vec)
+
+select :: (Storable a, Ord b) => (a -> b) -> b -> Vector a -> Vector a
+select f x vec =
+  unsafeDupablePerformIO $ do
+    mvec <- Vector.unsafeThaw vec
+    lo <- binarySearchP (\y -> x <= f y) mvec
+    hi <- gallopingSearchLeftPBounds (\y -> x < f y) mvec lo (Mutable.length mvec)
+    return (Vector.slice lo (hi-lo) vec)
+
+prop_select :: Int -> [Int] -> Property
+prop_select x xs0 =
+  select f x (Vector.fromList xs) ===
+  Vector.fromList (filter (\y -> f y == x) xs)
+  where
+    f x = x `div` 5
+    xs = List.sort xs0
 
 -- Before QuickChecking, reduce "k" in the slice function
 prop_sort :: [Int] -> Property

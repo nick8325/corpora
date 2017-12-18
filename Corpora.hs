@@ -15,7 +15,7 @@ import Data.Int
 import Data.Vector.Storable.MMap
 import Foreign.Storable
 import Foreign.Ptr
-import Sort
+import Vector
 import Data.Ord
 import qualified Data.Vector.Storable as Vector
 import Data.Vector.Storable.MMap
