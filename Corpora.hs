@@ -1,9 +1,11 @@
-{-# LANGUAGE DeriveGeneric, GeneralizedNewtypeDeriving, ScopedTypeVariables #-}
+{-# LANGUAGE DeriveGeneric, GeneralizedNewtypeDeriving, ScopedTypeVariables, OverloadedStrings #-}
 module Corpora where
 
 import System.IO.Unsafe
 import qualified Data.IntMap.Strict as IntMap
 import Data.IntMap(IntMap)
+import qualified Data.Map.Strict as Map
+import Data.Map(Map)
 import Data.Binary(Binary, encodeFile, decodeFile)
 import Data.Maybe
 import GHC.Generics
@@ -20,6 +22,8 @@ import Data.Ord
 import qualified Data.Vector.Storable as Vector
 import Data.Vector.Storable.MMap
 import System.Posix.Files
+import Data.String
+import qualified Data.Set as Set
 
 data Token =
   Word {
@@ -123,8 +127,38 @@ dataPos = unsafePerformIO (decodeFile "data/pos")
 dataHW = unsafePerformIO (decodeFile "data/hw")
 dataText = unsafePerformIO (decodeFile "data/text")
 
+invC5, invPos, invHW, invText :: Map String Int
+invC5 = invertData dataC5
+invPos = invertData dataPos
+invHW = invertData dataHW
+invText = invertData dataText
+
+invertData :: IntMap String -> Map String Int
+invertData map =
+  Map.fromList [(y, x) | (x, y) <- IntMap.toList map]
+
 showData :: IntMap String -> Int -> String
 showData map x = fromJust (IntMap.lookup x map)
+
+readData :: Map String Int -> String -> Int
+readData map x = fromJust (Map.lookup x map)
+
+instance IsString C5 where fromString = mkc5
+instance IsString Pos where fromString = mkpos
+instance IsString HW where fromString = mkhw
+instance IsString Text where fromString = mktext
+
+mkc5 :: String -> C5
+mkc5 = C5 . readData invC5
+
+mkpos :: String -> Pos
+mkpos = Pos . readData invPos
+
+mkhw :: String -> HW
+mkhw = HW . readData invHW
+
+mktext :: String -> Text
+mktext = Text . readData invText
 
 makeDataFile :: String -> IO ()
 makeDataFile base = do
@@ -160,3 +194,15 @@ makeIndex base f = do
 
 main = do
   makeIndex "hw-word-sentence" (\x -> (headWordMaybe x, word x, sentence x))
+
+query = Set.fromList $ do
+  -- cat .... the dog
+  let w1 = "cat"
+      w2 = "the"
+      w3 = "dog"
+      w1_occ = select headWordMaybe (Just w1) sortedWords
+  (i, w1_is) <- project word w1_occ
+  let w2_occ = select (\x -> (headWordMaybe x, word x `min` (i+1))) (Just w2, i+1) sortedWords
+  (j, w2_js) <- project word w2_occ
+  let w3_occ = select (\x -> (headWordMaybe x, word x)) (Just w3, j+1) sortedWords
+  map sentence (Vector.toList (intersect sentence [w1_is, w2_js, w3_occ]))
