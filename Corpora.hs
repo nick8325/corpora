@@ -8,13 +8,18 @@ import Data.Binary(Binary, encodeFile, decodeFile)
 import Data.Maybe
 import GHC.Generics
 import qualified Data.ByteString.Lazy as ByteString
-import qualified Data.Vector as Vector
+import qualified Data.Vector as DataVector
 import Data.Csv
 import Control.Monad
 import Data.Int
 import Data.Vector.Storable.MMap
 import Foreign.Storable
 import Foreign.Ptr
+import Sort
+import Data.Ord
+import qualified Data.Vector.Storable as Vector
+import Data.Vector.Storable.MMap
+import System.Posix.Files
 
 data Token =
   Word {
@@ -33,6 +38,10 @@ data Token =
     sentence :: {-# UNPACK #-} !Int,
     word :: {-# UNPACK #-} !Int }
   deriving (Eq, Show)
+
+headWordMaybe :: Token -> Maybe HW
+headWordMaybe x@Word{} = Just (headWord x)
+headWordMaybe _ = Nothing
 
 instance FromRecord Token where
   parseRecord r = do
@@ -96,6 +105,14 @@ instance Show Pos where show (Pos x) = showData dataPos x
 instance Show HW where show (HW x) = showData dataHW x
 instance Show Text where show (Text x) = showData dataText x
 
+{-# NOINLINE wordsVec #-}
+wordsVec :: Vector.Vector Token
+wordsVec = unsafePerformIO (unsafeMMapVector "data/words" Nothing)
+
+{-# NOINLINE sortedWords #-}
+sortedWords :: Vector.Vector Token
+sortedWords = unsafePerformIO (unsafeMMapVector "data/words-hw-word-sentence" Nothing)
+
 {-# NOINLINE dataC5 #-}
 {-# NOINLINE dataPos #-}
 {-# NOINLINE dataHW #-}
@@ -113,10 +130,10 @@ makeDataFile :: String -> IO ()
 makeDataFile base = do
   file <- ByteString.readFile ("csv/" ++ base)
   let
-    kvs :: Vector.Vector (Int, String)
+    kvs :: DataVector.Vector (Int, String)
     Right kvs = decode NoHeader file
   encodeFile ("data/" ++ base)
-    (IntMap.fromList (Vector.toList kvs))
+    (IntMap.fromList (DataVector.toList kvs))
 
 makeData :: IO ()
 makeData = do
@@ -126,11 +143,20 @@ makeWords :: String -> IO ()
 makeWords base = do
   file <- ByteString.readFile ("csv/" ++ base)
   let
-    kvs :: Vector.Vector Token
+    kvs :: DataVector.Vector Token
     Right kvs = decode NoHeader file
-  writeMMapVector ("data/" ++ base) kvs
 
-main =
-  forM_ ['a'..'l'] $ \c -> do
-    putStrLn [c]
-    makeWords ("splita" ++ [c])
+    out = "data/" ++ base
+
+  setFileSize out 0
+  writeMMapVector out kvs
+
+makeIndex :: Ord a => String -> (Token -> a) -> IO ()
+makeIndex base f = do
+  sorted <- sortBy (comparing f) wordsVec
+  let out = "data/words-" ++ base
+  setFileSize out 0
+  writeMMapVector out sorted
+
+main = do
+  makeIndex "hw-word-sentence" (\x -> (headWordMaybe x, word x, sentence x))
