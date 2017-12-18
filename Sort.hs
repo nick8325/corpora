@@ -1,3 +1,4 @@
+{-# LANGUAGE BangPatterns #-}
 -- Sorting large vectors with the help of temporary files.
 module Sort where
 
@@ -5,11 +6,12 @@ import Data.Vector.Storable(Vector)
 import Data.Vector.Storable.Mutable(IOVector)
 import qualified Data.Vector.Storable as Vector
 import qualified Data.Vector.Storable.Mutable as Mutable
-import qualified Data.Vector.Algorithms.Tim as Tim
 import Data.Vector.Storable.MMap
 import System.IO.Temp
 import Foreign.Storable
 import Control.Monad
+import System.IO
+import qualified Data.Vector.Algorithms.Intro as Intro
 
 import Test.QuickCheck
 import qualified Data.List as List
@@ -24,9 +26,11 @@ slice n = from 0
       where
         m' = (m+k) `min` n
 
+{-# INLINE sort #-}
 sort :: (Ord a, Storable a) => Vector a -> IO (Vector a)
 sort = sortBy compare
 
+{-# INLINEABLE sortBy #-}
 sortBy :: Storable a => (a -> a -> Ordering) -> Vector a -> IO (Vector a)
 sortBy comp vec =
   withSystemTempFile "sort1" $ \file1 _ ->
@@ -39,10 +43,13 @@ sortBy comp vec =
     input  <- unsafeMMapMVector file1 ReadWriteEx (Just (0, n))
     output <- unsafeMMapMVector file2 ReadWriteEx (Just (0, n))
 
-    -- Copy the input to a temporary vector and sort the slices in-place
-    Vector.copy input vec
-    forM_ slices $ \(i, n) ->
-      Tim.sortBy comp (Mutable.slice i n input)
+    -- Chop the vector into slices and sort the slices
+    hPutStr stderr "sort "
+    forM_ slices $ \(i, n) -> do
+      hPutStr stderr (show i ++ " ")
+      Vector.copy (Mutable.slice i n input) $
+        Vector.slice i n vec
+      Intro.sortBy comp (Mutable.slice i n input)
 
     -- Merging
     let
@@ -51,6 +58,7 @@ sortBy comp vec =
         Vector.copy (Mutable.slice i n output) (Vector.slice i n input)
         return [(i, n)]
       pass input output ((i1, n1):(i2, n2):xs) = do
+        hPutStr stderr (show i1 ++ " ")
         merge comp
           (Vector.slice i1 n1 input)
           (Vector.slice i2 n2 input)
@@ -60,14 +68,16 @@ sortBy comp vec =
       passes minput output [] = Vector.unsafeFreeze minput
       passes minput output [_] = Vector.unsafeFreeze minput
       passes minput output xs = do
+        hPutStr stderr "\nmerge "
         input <- Vector.unsafeFreeze minput
         ys <- pass input output xs
         passes output minput ys
 
-    passes input output slices
+    passes input output slices <* hPutStrLn stderr ""
 
+{-# INLINEABLE merge #-}
 merge :: Storable a => (a -> a -> Ordering) -> Vector a -> Vector a -> IOVector a -> IO ()
-merge comp in1 in2 out =
+merge comp !in1 !in2 !out =
   case (uncons in1, uncons in2) of
     (Nothing, _) ->
       Vector.copy out in2
@@ -81,7 +91,8 @@ merge comp in1 in2 out =
         _ -> do
           Mutable.write out 0 y
           merge comp in1 rest2 (Mutable.tail out)
-        
+
+{-# INLINE uncons #-}
 uncons :: Storable a => Vector a -> Maybe (a, Vector a)
 uncons vec
   | Vector.null vec = Nothing
