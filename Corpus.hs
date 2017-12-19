@@ -1,6 +1,10 @@
 -- Types for the corpus itself.
-{-# LANGUAGE DeriveGeneric, StandaloneDeriving, FlexibleContexts, UndecidableInstances, RankNTypes #-}
-module Corpus(Token(..), Lexeme(..)) where
+{-# LANGUAGE DeriveGeneric, StandaloneDeriving, FlexibleContexts, UndecidableInstances, RankNTypes, RecordWildCards #-}
+module Corpus(
+  Token(..), Lexeme(..), lexeme_maybe_lemma,
+  sentenceIndex, lemmaIndex,
+  withCorpus, openCorpus,
+  stringsFile, sentenceIndexFile, lemmaIndexFile) where
 
 import Strings
 import Index
@@ -30,17 +34,22 @@ withCorpus corpus x =
 
 openCorpus :: IO (Corpus s)
 openCorpus = do
-  strings <- ByteString.readFile "data/strings" >>= loadStrDatabase
+  strings <- ByteString.readFile stringsFile >>= loadStrDatabase
   bySentence <-
     collate token_sentence .
     collate token_position .
-    index <$> readData "data/by-sentence"
+    index <$> readData sentenceIndexFile
   byLemma <-
     collate (lexeme_lemma . token_lexeme) .
     collate token_position .
     collate token_sentence .
-    index <$> readData "data/by-lemma"
+    index <$> readData lemmaIndexFile
   return (Corpus strings bySentence byLemma)
+
+stringsFile, sentenceIndexFile, lemmaIndexFile :: FilePath
+stringsFile = "data/strings"
+sentenceIndexFile = "data/by-sentence"
+lemmaIndexFile = "data/by-lemma"
 
 -- A token is a lexeme at a particular position in the corpus.
 data Token s =
@@ -65,6 +74,10 @@ data Lexeme s =
     lexeme_claws_tag :: {-# UNPACK #-} !(ClawsTag s) } |
   Gap
   deriving (Eq, Generic)
+
+lexeme_maybe_lemma :: Lexeme s -> Maybe (Lemma s)
+lexeme_maybe_lemma Word{..} = Just lexeme_lemma
+lexeme_maybe_lemma _ = Nothing
 
 deriving instance Given (StrDatabase s) => Show (Lexeme s)
 
