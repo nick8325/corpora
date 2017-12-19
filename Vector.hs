@@ -1,33 +1,30 @@
 {-# LANGUAGE BangPatterns #-}
 -- Miscellaneous vector functions.
-module Vector(sort, sortBy, select, project, intersect) where
+module Vector(
+  uncons, sort, sortBy, writeData, readData,
+  Guess(..), countWhileMonotone,
+  takeWhileMonotone, dropWhileMonotone, spanMonotone) where
 
 import Data.Vector.Storable(Vector)
 import Data.Vector.Storable.Mutable(IOVector)
 import qualified Data.Vector.Storable as Vector
 import qualified Data.Vector.Storable.Mutable as Mutable
 import Data.Vector.Storable.MMap
-import System.IO.Temp
-import Foreign.Storable
-import Control.Monad
-import System.IO
 import qualified Data.Vector.Algorithms.Intro as Intro
 import Data.Vector.Algorithms.Search
+import Control.Monad
+import Foreign.Storable
 import System.IO.Unsafe
-import Data.Ord
+import System.IO.Temp
 
 import Test.QuickCheck
 import qualified Data.List as List
 
-slices :: Int -> [(Int, Int)]
-slices n = from 0
-  where
-    k = 1000000
-    from m
-      | m == n = []
-      | otherwise = (m, m' - m):from m'
-      where
-        m' = (m+k) `min` n
+{-# INLINE uncons #-}
+uncons :: Storable a => Vector a -> Maybe (a, Vector a)
+uncons vec
+  | Vector.null vec = Nothing
+  | otherwise = Just (Vector.unsafeHead vec, Vector.unsafeTail vec)
 
 -- Sort a large vector with the help of a temporary files.
 {-# INLINE sort #-}
@@ -48,9 +45,7 @@ sortBy comp vec =
     output <- unsafeMMapMVector file2 ReadWriteEx (Just (0, n))
 
     -- Chop the vector into slices and sort the slices
-    hPutStr stderr "sort "
     forM_ ss $ \(i, n) -> do
-      hPutStr stderr (show i ++ " ")
       Vector.copy (Mutable.slice i n input) $
         Vector.slice i n vec
       Intro.sortBy comp (Mutable.slice i n input)
@@ -62,7 +57,6 @@ sortBy comp vec =
         Vector.copy (Mutable.slice i n output) (Vector.slice i n input)
         return [(i, n)]
       pass input output ((i1, n1):(i2, n2):xs) = do
-        hPutStr stderr (show i1 ++ " ")
         merge comp
           (Vector.slice i1 n1 input)
           (Vector.slice i2 n2 input)
@@ -72,12 +66,21 @@ sortBy comp vec =
       passes minput output [] = Vector.unsafeFreeze minput
       passes minput output [_] = Vector.unsafeFreeze minput
       passes minput output xs = do
-        hPutStr stderr "\nmerge "
         input <- Vector.unsafeFreeze minput
         ys <- pass input output xs
         passes output minput ys
 
-    passes input output ss <* hPutStrLn stderr ""
+    passes input output ss
+
+slices :: Int -> [(Int, Int)]
+slices n = from 0
+  where
+    k = 1000000
+    from m
+      | m == n = []
+      | otherwise = (m, m' - m):from m'
+      where
+        m' = (m+k) `min` n
 
 {-# INLINEABLE merge #-}
 merge :: Storable a => (a -> a -> Ordering) -> Vector a -> Vector a -> IOVector a -> IO ()
@@ -96,73 +99,43 @@ merge comp !in1 !in2 !out =
           Mutable.write out 0 y
           merge comp in1 rest2 (Mutable.tail out)
 
-{-# INLINE uncons #-}
-uncons :: Storable a => Vector a -> Maybe (a, Vector a)
-uncons vec
-  | Vector.null vec = Nothing
-  | otherwise = Just (Vector.unsafeHead vec, Vector.unsafeTail vec)
+data Guess = NearStart | NearEnd | NoGuess
 
-select :: (Storable a, Ord b) => (a -> b) -> b -> Vector a -> Vector a
-select f x vec =
+countWhileMonotone :: Storable a => Guess -> (a -> Bool) -> Vector a -> Int
+countWhileMonotone guess p vec =
   unsafeDupablePerformIO $ do
+    let q = not . p
     mvec <- Vector.unsafeThaw vec
-    lo <- binarySearchP (\y -> x <= f y) mvec
-    hi <- gallopingSearchLeftPBounds (\y -> x < f y) mvec lo (Mutable.length mvec)
-    return (Vector.slice lo (hi-lo) vec)
+    case guess of
+      NearStart -> gallopingSearchLeftP  q mvec
+      NearEnd   -> gallopingSearchRightP q mvec
+      NoGuess   -> binarySearchP q mvec
 
-project :: (Storable a, Ord b) => (a -> b) -> Vector a -> [(b, Vector a)]
-project f vec =
-  case uncons vec of
-    Nothing -> []
-    Just (x, _) ->
-      let
-        fx = f x
-        n = puregallopingSearchLeftP (\y -> f y > fx) vec
-        (vec1, vec2) = Vector.splitAt n vec
-      in
-        (fx, vec1):project f vec2
-
-intersect :: (Storable a, Ord b) => (a -> b) -> [Vector a] -> Vector a
-intersect f vecs =
-  foldl1 merge (List.sortBy (comparing Vector.length) vecs)
+takeWhileMonotone :: Storable a => Guess -> (a -> Bool) -> Vector a -> Vector a
+takeWhileMonotone guess p vec =
+  Vector.take n vec
   where
-    merge vec1 vec2 =
-      Vector.fromList (mergeChunks vec1 vec2)
+    n = countWhileMonotone guess p vec
 
-    mergeChunks vec1 vec2 =
-      case (uncons vec1, uncons vec2) of
-        (Nothing, _) -> []
-        (_, Nothing) -> []
-        (Just (x, rest1), Just (y, rest2)) ->
-          let
-            fx = f x
-            fy = f y in
-          case compare fx fy of
-            EQ -> x:mergeChunks rest1 rest2
-            LT ->
-              let
-                n = puregallopingSearchLeftP (\x' -> f x' >= fy) vec1
-                vec1post = Vector.drop n vec1 in
-              mergeChunks vec1post vec2
-            GT ->
-              let
-                n = puregallopingSearchLeftP (\y' -> fx <= f y') vec2
-                vec2post = Vector.drop n vec2 in
-              mergeChunks vec1 vec2post
-
-puregallopingSearchLeftP :: Storable a => (a -> Bool) -> Vector a -> Int
-puregallopingSearchLeftP p vec =
-  unsafeDupablePerformIO $ do
-    mvec <- Vector.unsafeThaw vec
-    gallopingSearchLeftP p mvec
-
-prop_select :: Int -> [Int] -> Property
-prop_select x xs0 =
-  select f x (Vector.fromList xs) ===
-  Vector.fromList (filter (\y -> f y == x) xs)
+dropWhileMonotone :: Storable a => Guess -> (a -> Bool) -> Vector a -> Vector a
+dropWhileMonotone guess p vec =
+  Vector.drop n vec
   where
-    f x = x `div` 5
-    xs = List.sort xs0
+    n = countWhileMonotone guess p vec
+
+spanMonotone :: Storable a => Guess -> (a -> Bool) -> Vector a -> (Vector a, Vector a)
+spanMonotone guess p vec =
+  Vector.splitAt n vec
+  where
+    n = countWhileMonotone guess p vec
+
+writeData :: Storable a => FilePath -> Vector a -> IO ()
+writeData file vec = do
+  writeFile file "" -- truncate to 0, see comment for writeMMapVector
+  writeMMapVector file vec
+
+readData :: Storable a => FilePath -> IO (Vector a)
+readData file = unsafeMMapVector file Nothing
 
 -- Before QuickChecking, reduce "k" in the slice function
 prop_sort :: [Int] -> Property

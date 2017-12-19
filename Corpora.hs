@@ -1,6 +1,7 @@
 {-# LANGUAGE DeriveGeneric, GeneralizedNewtypeDeriving, ScopedTypeVariables, OverloadedStrings #-}
 module Corpora where
 
+import System.TimeIt
 import System.IO.Unsafe
 import qualified Data.IntMap.Strict as IntMap
 import Data.IntMap(IntMap)
@@ -11,7 +12,7 @@ import Data.Maybe
 import GHC.Generics
 import qualified Data.ByteString.Lazy as ByteString
 import qualified Data.Vector as DataVector
-import Data.Csv
+import Data.Csv hiding (index)
 import Control.Monad
 import Data.Int
 import Data.Vector.Storable.MMap
@@ -24,6 +25,7 @@ import Data.Vector.Storable.MMap
 import System.Posix.Files
 import Data.String
 import qualified Data.Set as Set
+import Index
 
 data Token =
   Word {
@@ -46,6 +48,14 @@ data Token =
 headWordMaybe :: Token -> Maybe HW
 headWordMaybe x@Word{} = Just (headWord x)
 headWordMaybe _ = Nothing
+
+showSentence :: [Token] -> String
+showSentence toks =
+  unwords $ do
+    x <- toks
+    case x of
+      Gap{} -> mzero
+      _ -> return (show (text x))
 
 instance FromRecord Token where
   parseRecord r = do
@@ -110,12 +120,16 @@ instance Show HW where show (HW x) = showData dataHW x
 instance Show Text where show (Text x) = showData dataText x
 
 {-# NOINLINE wordsVec #-}
-wordsVec :: Vector.Vector Token
-wordsVec = unsafePerformIO (unsafeMMapVector "data/words" Nothing)
+wordsVec :: Index (Int, ()) Token
+wordsVec =
+  collate sentence $ index $
+  unsafePerformIO (readData "data/words")
 
 {-# NOINLINE sortedWords #-}
-sortedWords :: Vector.Vector Token
-sortedWords = unsafePerformIO (unsafeMMapVector "data/words-hw-word-sentence" Nothing)
+sortedWords :: Index (Maybe HW, (Int, (Int, ()))) Token
+sortedWords =
+  collate headWordMaybe $ collate word $ collate sentence $ index $
+  unsafePerformIO (readData "data/words-hw-word-sentence")
 
 {-# NOINLINE dataC5 #-}
 {-# NOINLINE dataPos #-}
@@ -140,8 +154,8 @@ invertData map =
 showData :: IntMap String -> Int -> String
 showData map x = fromJust (IntMap.lookup x map)
 
-readData :: Map String Int -> String -> Int
-readData map x = fromJust (Map.lookup x map)
+readDataFile :: Map String Int -> String -> Int
+readDataFile map x = fromJust (Map.lookup x map)
 
 instance IsString C5 where fromString = mkc5
 instance IsString Pos where fromString = mkpos
@@ -149,16 +163,16 @@ instance IsString HW where fromString = mkhw
 instance IsString Text where fromString = mktext
 
 mkc5 :: String -> C5
-mkc5 = C5 . readData invC5
+mkc5 = C5 . readDataFile invC5
 
 mkpos :: String -> Pos
-mkpos = Pos . readData invPos
+mkpos = Pos . readDataFile invPos
 
 mkhw :: String -> HW
-mkhw = HW . readData invHW
+mkhw = HW . readDataFile invHW
 
 mktext :: String -> Text
-mktext = Text . readData invText
+mktext = Text . readDataFile invText
 
 makeDataFile :: String -> IO ()
 makeDataFile base = do
@@ -182,27 +196,27 @@ makeWords base = do
 
     out = "data/" ++ base
 
-  setFileSize out 0
-  writeMMapVector out kvs
+  writeData out (Vector.convert kvs)
 
 makeIndex :: Ord a => String -> (Token -> a) -> IO ()
 makeIndex base f = do
-  sorted <- sortBy (comparing f) wordsVec
+  sorted <- sortBy (comparing f) (get wordsVec)
   let out = "data/words-" ++ base
-  setFileSize out 0
-  writeMMapVector out sorted
+  writeData out sorted
+
+query w1 w2 w3 = Set.toList $ Set.fromList $ do
+  -- w1 .... w2 w3
+  let w1_occ = sortedWords ! Just w1
+  (i, w1_is) <- toList w1_occ
+  let w2_occ = filterGT i (sortedWords ! Just w2)
+  (j, w2_js) <- toList w2_occ
+  let w3_occ = sortedWords ! Just w3 ! (j+1)
+  map sentence (Vector.toList (get (intersection [w1_is, w2_js, w3_occ])))
+
+getSentence n =
+  Vector.toList (get (wordsVec ! n))
 
 main = do
-  makeIndex "hw-word-sentence" (\x -> (headWordMaybe x, word x, sentence x))
-
-query = Set.fromList $ do
-  -- cat .... the dog
-  let w1 = "cat"
-      w2 = "the"
-      w3 = "dog"
-      w1_occ = select headWordMaybe (Just w1) sortedWords
-  (i, w1_is) <- project word w1_occ
-  let w2_occ = select (\x -> (headWordMaybe x, word x `min` (i+1))) (Just w2, i+1) sortedWords
-  (j, w2_js) <- project word w2_occ
-  let w3_occ = select (\x -> (headWordMaybe x, word x)) (Just w3, j+1) sortedWords
-  map sentence (Vector.toList (intersect sentence [w1_is, w2_js, w3_occ]))
+  print (get sortedWords Vector.! 3000000)
+  print ("cat" :: HW)
+  timeIt (mapM_ (print . showSentence . getSentence) (query "the" "dominant" "animal"))
