@@ -1,8 +1,8 @@
 -- Interned strings, backed by an on-disk database.
-{-# LANGUAGE DeriveGeneric, FlexibleContexts, UndecidableInstances, RecordWildCards, BangPatterns #-}
+{-# LANGUAGE DeriveGeneric, FlexibleContexts, UndecidableInstances, RecordWildCards, BangPatterns, GeneralizedNewtypeDeriving #-}
 module Strings(
-  Str(..), Database,
-  newDatabase, loadDatabase, saveDatabase,
+  Str(..), StrDatabase,
+  newStrDatabase, loadStrDatabase, saveStrDatabase,
   intern, unintern) where
 
 import qualified Data.Vector.Storable as Vector
@@ -26,15 +26,16 @@ import Data.Binary
 import Data.Vector.Binary
 import qualified Data.List as List
 import Data.Ord
+import Foreign.Storable
 
 -- An interned string is really just a number.
 -- The phantom type parameter represents the particular database.
-newtype Str s = Str Int deriving (Eq, Ord)
+newtype Str s = Str Int deriving (Eq, Ord, Storable)
 
 showStrNum :: Str s -> String
 showStrNum (Str n) = show n
     
-newtype Database s = Database (IORef Contents)
+newtype StrDatabase s = StrDatabase (IORef Contents)
 
 -- The database has both an on-disk part and an in-memory part.
 -- This is so that asking to intern a string which is not stored on disk
@@ -69,18 +70,18 @@ data DiskContents =
 
 instance Binary DiskContents
 
-instance Given (Database s) => IsString (Str s) where
+instance Given (StrDatabase s) => IsString (Str s) where
   fromString = intern given
 
-instance Given (Database s) => Show (Str s) where
+instance Given (StrDatabase s) => Show (Str s) where
   show = show . unintern given
 
 ----------------------------------------------------------------------
 -- Interning and uninterning.
 ----------------------------------------------------------------------
 
-intern :: Database s -> String -> Str s
-intern (Database ref) str =
+intern :: StrDatabase s -> String -> Str s
+intern (StrDatabase ref) str =
   deepseq str $
   unsafeDupablePerformIO $
   atomicModifyIORef' ref $ \contents ->
@@ -104,8 +105,8 @@ internContents contents@Contents{contents_disk = disk@DiskContents{..}, contents
             Str n)
     _ -> error "duplicate interned strings"
 
-unintern :: Database s -> Str s -> String
-unintern (Database ref) !str =
+unintern :: StrDatabase s -> Str s -> String
+unintern (StrDatabase ref) !str =
   unsafeDupablePerformIO $ do
     contents <- readIORef ref
     return (uninternContents contents str)
@@ -130,18 +131,18 @@ readString DiskContents{..} n =
 -- Creating, loading and storing databases.
 ----------------------------------------------------------------------
 
-newDatabase :: IO (Database s)
-newDatabase =
-  newDatabaseFrom
+newStrDatabase :: IO (StrDatabase s)
+newStrDatabase =
+  newStrDatabaseFrom
     DiskContents {
       dc_string = ByteString.empty,
       dc_offsets = Vector.empty,
       dc_lengths = Vector.empty,
       dc_sorted = Vector.empty }
 
-newDatabaseFrom :: DiskContents -> IO (Database s)
-newDatabaseFrom disk =
-  Database <$>
+newStrDatabaseFrom :: DiskContents -> IO (StrDatabase s)
+newStrDatabaseFrom disk =
+  StrDatabase <$>
   newIORef Contents {
     contents_disk = disk,
     contents_memory =
@@ -150,17 +151,17 @@ newDatabaseFrom disk =
         mc_intern = Map.empty,
         mc_unintern = IntMap.empty } }
         
-loadDatabase :: ByteString -> IO (Database s)
-loadDatabase str =
-  newDatabaseFrom (decode (ByteString.fromStrict str))
+loadStrDatabase :: ByteString -> IO (StrDatabase s)
+loadStrDatabase str =
+  newStrDatabaseFrom (decode (ByteString.fromStrict str))
   
-saveDatabase :: Database s -> IO ByteString
-saveDatabase db =
+saveStrDatabase :: StrDatabase s -> IO ByteString
+saveStrDatabase db =
   ByteString.toStrict <$> encode <$> diskContentsFrom <$> databaseContents db
 
 -- Get all strings stored in the database.
-databaseContents :: Database s -> IO [String]
-databaseContents (Database ref) = do
+databaseContents :: StrDatabase s -> IO [String]
+databaseContents (StrDatabase ref) = do
   contents@Contents{..} <- readIORef ref
   return
     [ uninternContents contents (Str n)
@@ -201,26 +202,26 @@ test = do
       check "intern only adds strings once" $
         map (intern db) xs == map Str [0..length xs-1]
 
-  db <- newDatabase :: IO (Database ())
+  db <- newStrDatabase :: IO (StrDatabase ())
   let xs = ["hello", "world", "привет", "apa"]
   checks db xs
 
   -- Save, load and do some more operations.
-  bs <- saveDatabase db
-  db <- loadDatabase bs :: IO (Database ())
+  bs <- saveStrDatabase db
+  db <- loadStrDatabase bs :: IO (StrDatabase ())
   let ys = xs ++ ["monkey", "banana", "zebra"]
   checks db ys
 
   -- Save again. Tests that saving a database which has both
   -- disk and memory contents works.
-  bs <- saveDatabase db
-  db@(Database ref) <- loadDatabase bs :: IO (Database ())
+  bs <- saveStrDatabase db
+  db@(StrDatabase ref) <- loadStrDatabase bs :: IO (StrDatabase ())
   checks db ys
 
   -- Check that if the database doesn't change, dumping and
   -- restoring is idempotent.
-  bs <- saveDatabase db
-  Database ref' <- loadDatabase bs :: IO (Database ())
+  bs <- saveStrDatabase db
+  StrDatabase ref' <- loadStrDatabase bs :: IO (StrDatabase ())
   contents <- readIORef ref
   contents' <- readIORef ref'
   check "final database unchanged" (contents == contents')
