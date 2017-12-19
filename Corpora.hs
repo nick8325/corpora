@@ -51,7 +51,7 @@ headWordMaybe _ = Nothing
 
 showSentence :: [Token] -> String
 showSentence toks =
-  unwords $ do
+  concat $ do
     x <- toks
     case x of
       Gap{} -> mzero
@@ -210,8 +210,9 @@ query w1 w2 w3 = Set.toList $ Set.fromList $ do
   (i, w1_is) <- toList w1_occ
   let w2_occ = filterGT i (sortedWords ! Just w2)
   (j, w2_js) <- toList w2_occ
-  let w3_occ = sortedWords ! Just w3 ! (j+1)
-  map sentence (Vector.toList (get (intersection [w1_is, w2_js, w3_occ])))
+  let w3_occ = filterGT j (sortedWords ! Just w3) --sortedWords ! Just w3 ! (j+1)
+  (k, w3_ks) <- toList w3_occ
+  map sentence (Vector.toList (get (intersection [w1_is, w2_js, w3_ks])))
 
 getSentence n =
   Vector.toList (get (wordsVec ! n))
@@ -219,4 +220,4 @@ getSentence n =
 main = do
   print (get sortedWords Vector.! 3000000)
   print ("cat" :: HW)
-  timeIt (mapM_ (print . showSentence . getSentence) (query "the" "dominant" "animal"))
+  timeIt (mapM_ (print . showSentence . getSentence) (query "cat" "the" "dog"))
