@@ -23,9 +23,7 @@ collate key1 (Index key2 vec) =
 (!) :: (Ord k1, Storable a) => Index (k1, k2) a -> k1 -> Index k2 a
 Index key vec ! k =
   Index (snd . key) $
-    takeWhileMonotone NearStart (\x -> key1 x <= k) $
-    dropWhileMonotone NoGuess (\x -> key1 x < k) $
-    vec
+    findMonotone NoGuess key1 (key1 k) vec
   where
     key1 = fst . key
 

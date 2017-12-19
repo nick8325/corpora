@@ -3,7 +3,7 @@
 module Vector(
   uncons, sort, sortBy, writeData, readData,
   Guess(..), countWhileMonotone,
-  takeWhileMonotone, dropWhileMonotone, spanMonotone) where
+  takeWhileMonotone, dropWhileMonotone, spanMonotone, findMonotone) where
 
 import Data.Vector.Storable(Vector)
 import Data.Vector.Storable.Mutable(IOVector)
@@ -128,6 +128,11 @@ spanMonotone guess p vec =
   Vector.splitAt n vec
   where
     n = countWhileMonotone guess p vec
+
+findMonotone :: (Storable a, Ord b) => Guess -> (a -> b) -> b -> Vector a -> Vector a
+findMonotone guess f x vec =
+  takeWhileMonotone NearStart (\y -> f y <= x) $
+  dropWhileMonotone guess (\y -> f y < x) vec
 
 writeData :: Storable a => FilePath -> Vector a -> IO ()
 writeData file vec = do
