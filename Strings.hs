@@ -27,10 +27,14 @@ import Data.Vector.Binary
 import qualified Data.List as List
 import Data.Ord
 import Foreign.Storable
+import Data.Int
 
 -- An interned string is really just a number.
 -- The phantom type parameter represents the particular database.
-newtype Str s = Str Int deriving (Eq, Ord, Storable)
+newtype Str s = Str Int32 deriving (Eq, Ord, Storable)
+
+strId :: Str s -> Int
+strId (Str n) = fromIntegral n
 
 showStrNum :: Str s -> String
 showStrNum (Str n) = show n
@@ -50,9 +54,9 @@ data Contents =
 data MemoryContents =
   MemoryContents {
     -- The next number to use.
-    mc_next     :: {-# UNPACK #-} !Int,
+    mc_next     :: {-# UNPACK #-} !Int32,
     -- Maps from strings to their numbers and back again.
-    mc_intern   :: !(Map String Int),
+    mc_intern   :: !(Map String Int32),
     mc_unintern :: !(IntMap String) }
   deriving (Eq, Show)
 
@@ -90,7 +94,7 @@ intern (StrDatabase ref) str =
 internContents :: Contents -> String -> (Contents, Str s)
 internContents contents@Contents{contents_disk = disk@DiskContents{..}, contents_memory = MemoryContents{..}} str =
   case Vector.toList (findMonotone NoGuess (readString disk) str dc_sorted) of
-    [n] -> (contents, Str n)
+    [n] -> (contents, Str (fromIntegral n))
     [] ->
       case Map.lookup str mc_intern of
         Just n -> (contents, Str n)
@@ -101,7 +105,7 @@ internContents contents@Contents{contents_disk = disk@DiskContents{..}, contents
                MemoryContents {
                  mc_next = n+1,
                  mc_intern = Map.insert str n mc_intern,
-                 mc_unintern = IntMap.insert n str mc_unintern } },
+                 mc_unintern = IntMap.insert (fromIntegral n) str mc_unintern } },
             Str n)
     _ -> error "duplicate interned strings"
 
@@ -112,11 +116,11 @@ unintern (StrDatabase ref) !str =
     return (uninternContents contents str)
 
 uninternContents :: Contents -> Str s -> String
-uninternContents Contents{contents_disk = disk@DiskContents{..}, contents_memory = MemoryContents{..}} (Str n)
-  | n < Vector.length dc_offsets =
-    readString disk n
+uninternContents Contents{contents_disk = disk@DiskContents{..}, contents_memory = MemoryContents{..}} str
+  | strId str < Vector.length dc_offsets =
+    readString disk (strId str)
   | otherwise =
-    case IntMap.lookup n mc_unintern of
+    case IntMap.lookup (strId str) mc_unintern of
       Just str -> str
       Nothing -> error "unknown interned string"
 
@@ -147,7 +151,7 @@ newStrDatabaseFrom disk =
     contents_disk = disk,
     contents_memory =
       MemoryContents {
-        mc_next = Vector.length (dc_offsets disk),
+        mc_next = fromIntegral (Vector.length (dc_offsets disk)),
         mc_intern = Map.empty,
         mc_unintern = IntMap.empty } }
         
@@ -200,7 +204,7 @@ test = do
       check "intern returns correct string" $
         map (unintern db . intern db) xs == xs
       check "intern only adds strings once" $
-        map (intern db) xs == map Str [0..length xs-1]
+        map (intern db) xs == map Str [0..List.genericLength xs-1]
 
   db <- newStrDatabase :: IO (StrDatabase ())
   let xs = ["hello", "world", "привет", "apa"]
