@@ -13,9 +13,6 @@ import Data.Ord
 import Data.Maybe
 import System.Directory
 import Data.Vector.Storable.ByteString
-import Data.List.Split
-
-type Sentence s = [Lexeme s]
 
 toTokens :: StrDatabase s -> Element -> [Lexeme s]
 toTokens db el
@@ -71,14 +68,14 @@ parse db =
 main = do
   files <- getArgs
   createDirectoryIfMissing False "data"
-  newStrDatabase >>= saveStrDatabase >>= ByteString.writeFile stringsFile
+  db <- newStrDatabase
 
   -- We write the main data file incrementally, to save memory
   writeFile sentenceIndexFile ""
 
   let
-    process !_ n [] = return n
-    process db n (file:files) = do
+    process n [] = return ()
+    process n (file:files) = do
       putStrLn ("Loading " ++ file ++ "...")
       sentences <- parse db <$> T.readFile file
       let
@@ -90,18 +87,12 @@ main = do
 
       ByteString.appendFile sentenceIndexFile (vectorToByteString tokens)
 
-      process db (n+length sentences) files
-
-    -- We save and reload the string database every 20 files, to save memory
-    processChunks !_ [] = return ()
-    processChunks n (files:filess) = do
-      db <- ByteString.readFile stringsFile >>= loadStrDatabase
-      m <- process db n files
-      putStrLn "Saving string database..."  
-      saveStrDatabase db >>= ByteString.writeFile stringsFile
-      processChunks m filess
+      process (n+length sentences) files
     
-  processChunks 0 (chunksOf 20 files)
+  process 0 files
+
+  putStrLn "Saving string database..."
+  saveStrDatabase db >>= ByteString.writeFile stringsFile
 
   putStrLn "Generating index..."
   sentenceIndex <- readData sentenceIndexFile :: IO (Vector (Token ()))
