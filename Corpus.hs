@@ -1,10 +1,12 @@
 -- Types for the corpus itself.
-{-# LANGUAGE DeriveGeneric, StandaloneDeriving, FlexibleContexts, UndecidableInstances, RankNTypes, RecordWildCards #-}
+{-# LANGUAGE DeriveGeneric, StandaloneDeriving, FlexibleContexts, UndecidableInstances, RankNTypes, RecordWildCards, ConstraintKinds #-}
 module Corpus(
-  Token(..), Lexeme(..), lexeme_maybe_lemma,
+  Corpus(..), WithCorpus, BNC, withCorpus, loadCorpus,
+  stringsFile, sentenceIndexFile, lemmaIndexFile,
   sentenceIndex, lemmaIndex,
-  withCorpus, openCorpus,
-  stringsFile, sentenceIndexFile, lemmaIndexFile) where
+  Sentence, showSentence, getSentence,
+  Token(..), Lexeme(..), lexeme_maybe_lemma,
+  Lemma, Text, POS, ClawsTag, SentenceNumber, Position) where
 
 import Strings
 import Index
@@ -15,6 +17,7 @@ import Foreign.Storable
 import Foreign.Storable.Tuple
 import Data.Reflection
 import qualified Data.ByteString as ByteString
+import qualified Data.Vector.Storable as Vector
 
 data Corpus s =
   Corpus {
@@ -28,12 +31,14 @@ sentenceIndex = corpus_by_sentence given
 lemmaIndex :: Given (Corpus s) => Index (Lemma s, (Position, (SentenceNumber, ()))) (Token s)
 lemmaIndex = corpus_by_lemma given
 
-withCorpus :: Corpus s -> ((Given (Corpus s), Given (StrDatabase s)) => a) -> a
+type WithCorpus s = (Given (Corpus s), Given (StrDatabase s))
+withCorpus :: Corpus s -> (WithCorpus s => a) -> a
 withCorpus corpus x =
   give corpus (give (corpus_strings corpus) x)
 
-openCorpus :: IO (Corpus s)
-openCorpus = do
+data BNC
+loadCorpus :: IO (Corpus BNC)
+loadCorpus = do
   strings <- ByteString.readFile stringsFile >>= loadStrDatabase
   bySentence <-
     collate token_sentence .
@@ -50,6 +55,20 @@ stringsFile, sentenceIndexFile, lemmaIndexFile :: FilePath
 stringsFile = "data/strings"
 sentenceIndexFile = "data/by-sentence"
 lemmaIndexFile = "data/by-lemma"
+
+-- A sentence is a list of lexemes.
+type Sentence s = [Lexeme s]
+
+showSentence :: WithCorpus s => Sentence s -> String
+showSentence xs = do
+  x <- xs
+  case x of
+    Gap -> "<gap> "
+    _ -> strValue (lexeme_text x)
+
+getSentence :: WithCorpus s => SentenceNumber -> Sentence s
+getSentence n =
+  map token_lexeme (Vector.toList (get (sentenceIndex ! n)))
 
 -- A token is a lexeme at a particular position in the corpus.
 data Token s =

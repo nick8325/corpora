@@ -1,7 +1,7 @@
 -- Interned strings, backed by an on-disk database.
 {-# LANGUAGE DeriveGeneric, FlexibleContexts, UndecidableInstances, RecordWildCards, BangPatterns, GeneralizedNewtypeDeriving #-}
 module Strings(
-  Str(..), StrDatabase,
+  Str(..), strId, strValue, StrDatabase,
   newStrDatabase, loadStrDatabase, saveStrDatabase,
   intern, unintern) where
 
@@ -36,9 +36,18 @@ newtype Str s = Str Int32 deriving (Eq, Ord, Storable)
 strId :: Str s -> Int
 strId (Str n) = fromIntegral n
 
+strValue :: Given (StrDatabase s) => Str s -> String
+strValue str = unintern given str
+
 showStrNum :: Str s -> String
 showStrNum (Str n) = show n
     
+instance Given (StrDatabase s) => IsString (Str s) where
+  fromString = intern given
+
+instance Given (StrDatabase s) => Show (Str s) where
+  show = show . unintern given
+
 newtype StrDatabase s = StrDatabase (IORef Contents)
 
 -- The database has both an on-disk part and an in-memory part.
@@ -73,12 +82,6 @@ data DiskContents =
   deriving (Eq, Show, Generic)
 
 instance Binary DiskContents
-
-instance Given (StrDatabase s) => IsString (Str s) where
-  fromString = intern given
-
-instance Given (StrDatabase s) => Show (Str s) where
-  show = show . unintern given
 
 ----------------------------------------------------------------------
 -- Interning and uninterning.
