@@ -24,4 +24,4 @@ query w1 w2 w3 =
 main = do
   corpus <- loadCorpus
   withCorpus corpus $
-    timeIt (mapM_ (print . showSentence) (query "cat" "the" "dog"))
+    timeIt (mapM_ (putStrLn . showSentence) (query "cat" "the" "dog"))
