@@ -101,6 +101,7 @@ merge comp !in1 !in2 !out =
 
 data Guess = NearStart | NearEnd | NoGuess
 
+{-# INLINEABLE countWhileMonotone #-}
 countWhileMonotone :: Storable a => Guess -> (a -> Bool) -> Vector a -> Int
 countWhileMonotone guess p vec =
   unsafeDupablePerformIO $ do
@@ -111,34 +112,40 @@ countWhileMonotone guess p vec =
       NearEnd   -> gallopingSearchRightP q mvec
       NoGuess   -> binarySearchP q mvec
 
+{-# INLINE takeWhileMonotone #-}
 takeWhileMonotone :: Storable a => Guess -> (a -> Bool) -> Vector a -> Vector a
 takeWhileMonotone guess p vec =
   Vector.take n vec
   where
     n = countWhileMonotone guess p vec
 
+{-# INLINE dropWhileMonotone #-}
 dropWhileMonotone :: Storable a => Guess -> (a -> Bool) -> Vector a -> Vector a
 dropWhileMonotone guess p vec =
   Vector.drop n vec
   where
     n = countWhileMonotone guess p vec
 
+{-# INLINE spanMonotone #-}
 spanMonotone :: Storable a => Guess -> (a -> Bool) -> Vector a -> (Vector a, Vector a)
 spanMonotone guess p vec =
   Vector.splitAt n vec
   where
     n = countWhileMonotone guess p vec
 
+{-# INLINEABLE findMonotone #-}
 findMonotone :: (Storable a, Ord b) => Guess -> (a -> b) -> b -> Vector a -> Vector a
 findMonotone guess f x vec =
   takeWhileMonotone NearStart (\y -> f y <= x) $
   dropWhileMonotone guess (\y -> f y < x) vec
 
+{-# INLINEABLE writeData #-}
 writeData :: Storable a => FilePath -> Vector a -> IO ()
 writeData file vec = do
   writeFile file "" -- truncate to 0, see comment for writeMMapVector
   writeMMapVector file vec
 
+{-# INLINEABLE readData #-}
 readData :: Storable a => FilePath -> IO (Vector a)
 readData file = unsafeMMapVector file Nothing
 

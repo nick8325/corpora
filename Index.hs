@@ -20,6 +20,7 @@ collate :: (a -> k1) -> Index k2 a -> Index (k1, k2) a
 collate key1 (Index key2 vec) =
   Index (\x -> (key1 x, key2 x)) vec
 
+{-# INLINEABLE (!) #-}
 (!) :: (Ord k1, Storable a) => Index (k1, k2) a -> k1 -> Index k2 a
 Index key vec ! k =
   Index (snd . key) $
@@ -27,6 +28,7 @@ Index key vec ! k =
   where
     key1 = fst . key
 
+{-# INLINEABLE filterGT #-}
 filterGT :: (Ord k1, Storable a) => k1 -> Index (k1, k2) a -> Index (k1, k2) a
 filterGT k (Index key vec) =
   Index key $
@@ -35,6 +37,7 @@ filterGT k (Index key vec) =
   where
     key1 = fst . key
 
+{-# INLINEABLE toList #-}
 toList :: (Ord k1, Storable a) => Index (k1, k2) a -> [(k1, Index k2 a)]
 toList (Index key vec) =
   case uncons vec of
@@ -48,16 +51,20 @@ toList (Index key vec) =
   where
     key1 = fst . key
 
+{-# INLINEABLE keys #-}
 keys :: (Ord k1, Storable a) => Index (k1, k2) a -> [k1]
 keys = map fst . toList
 
+{-# INLINEABLE elems #-}
 elems :: (Ord k1, Storable a) => Index (k1, k2) a -> [Index k2 a]
 elems = map snd . toList
 
+{-# INLINEABLE intersection #-}
 intersection :: (Storable a, Ord k) => [Index k a] -> Index k a
 intersection idxs =
   foldl1 intersect (List.sortBy (comparing (Vector.length . get)) idxs)
 
+{-# INLINEABLE intersect #-}
 intersect :: (Storable a, Ord k) => Index k a -> Index k a -> Index k a
 intersect (Index key vec1) (Index _ vec2) =
   Index key (Vector.fromList (mergeChunks key vec1 vec2))
