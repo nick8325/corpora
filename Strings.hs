@@ -1,9 +1,9 @@
 -- Interned strings, backed by an on-disk database.
 {-# LANGUAGE DeriveGeneric, FlexibleContexts, UndecidableInstances, RecordWildCards, BangPatterns, GeneralizedNewtypeDeriving #-}
 module Strings(
-  Str(..), strId, strValue, StrDatabase,
+  Str(..), strId, strValue, strValueBS, StrDatabase,
   newStrDatabase, loadStrDatabase, saveStrDatabase,
-  intern, unintern) where
+  intern, internBS, unintern, uninternBS) where
 
 import qualified Data.Vector.Storable as Vector
 import Data.Vector.Storable(Vector, (!))
@@ -20,7 +20,6 @@ import qualified Data.IntMap.Strict as IntMap
 import Data.IntMap(IntMap)
 import qualified Data.Map.Strict as Map
 import Data.Map(Map)
-import Control.DeepSeq
 import Vector
 import Data.Binary
 import Data.Vector.Binary
@@ -38,6 +37,9 @@ strId (Str n) = fromIntegral n
 
 strValue :: Given (StrDatabase s) => Str s -> String
 strValue str = unintern given str
+
+strValueBS :: Given (StrDatabase s) => Str s -> ByteString
+strValueBS str = uninternBS given str
 
 showStrNum :: Str s -> String
 showStrNum (Str n) = show n
@@ -65,8 +67,8 @@ data MemoryContents =
     -- The next number to use.
     mc_next     :: {-# UNPACK #-} !Int32,
     -- Maps from strings to their numbers and back again.
-    mc_intern   :: !(Map String Int32),
-    mc_unintern :: !(IntMap String) }
+    mc_intern   :: !(Map ByteString Int32),
+    mc_unintern :: !(IntMap ByteString) }
   deriving (Eq, Show)
 
 data DiskContents =
@@ -88,13 +90,15 @@ instance Binary DiskContents
 ----------------------------------------------------------------------
 
 intern :: StrDatabase s -> String -> Str s
-intern (StrDatabase ref) str =
-  deepseq str $
+intern db s = internBS db (ByteString.fromString s)
+
+internBS :: StrDatabase s -> ByteString -> Str s
+internBS (StrDatabase ref) !str =
   unsafeDupablePerformIO $
   atomicModifyIORef' ref $ \contents ->
     internContents contents str
 
-internContents :: Contents -> String -> (Contents, Str s)
+internContents :: Contents -> ByteString -> (Contents, Str s)
 internContents contents@Contents{contents_disk = disk@DiskContents{..}, contents_memory = MemoryContents{..}} str =
   case Vector.toList (findMonotone NoGuess (readString disk) str dc_sorted) of
     [n] -> (contents, Str (fromIntegral n))
@@ -113,12 +117,15 @@ internContents contents@Contents{contents_disk = disk@DiskContents{..}, contents
     _ -> error "duplicate interned strings"
 
 unintern :: StrDatabase s -> Str s -> String
-unintern (StrDatabase ref) !str =
+unintern db str = ByteString.toString (uninternBS db str)
+
+uninternBS :: StrDatabase s -> Str s -> ByteString
+uninternBS (StrDatabase ref) !str =
   unsafeDupablePerformIO $ do
     contents <- readIORef ref
     return (uninternContents contents str)
 
-uninternContents :: Contents -> Str s -> String
+uninternContents :: Contents -> Str s -> ByteString
 uninternContents Contents{contents_disk = disk@DiskContents{..}, contents_memory = MemoryContents{..}} str
   | strId str < Vector.length dc_offsets =
     readString disk (strId str)
@@ -128,11 +135,10 @@ uninternContents Contents{contents_disk = disk@DiskContents{..}, contents_memory
       Nothing -> error "unknown interned string"
 
 -- Read the value of a string from the on-disk part of the database.
-readString :: DiskContents -> Int -> String
+readString :: DiskContents -> Int -> ByteString
 readString DiskContents{..} n =
-  ByteString.toString $
-    ByteString.take (dc_lengths ! n) $
-    ByteString.drop (dc_offsets ! n) dc_string
+  ByteString.take (dc_lengths ! n) $
+  ByteString.drop (dc_offsets ! n) dc_string
 
 ----------------------------------------------------------------------
 -- Creating, loading and storing databases.
@@ -167,7 +173,7 @@ saveStrDatabase db =
   ByteString.toStrict <$> encode <$> diskContentsFrom <$> databaseContents db
 
 -- Get all strings stored in the database.
-databaseContents :: StrDatabase s -> IO [String]
+databaseContents :: StrDatabase s -> IO [ByteString]
 databaseContents (StrDatabase ref) = do
   contents@Contents{..} <- readIORef ref
   return
@@ -175,20 +181,16 @@ databaseContents (StrDatabase ref) = do
     | n <- [0..mc_next contents_memory-1] ]
 
 -- Build a DiskContents from the list of interned strings.
-diskContentsFrom :: [String] -> DiskContents
+diskContentsFrom :: [ByteString] -> DiskContents
 diskContentsFrom strs =
   DiskContents {
-    dc_string = ByteString.concat bytes,
+    dc_string = ByteString.concat strs,
     dc_offsets = Vector.fromList offsets,
     dc_lengths = Vector.fromList lengths,
     dc_sorted = Vector.fromList sorted }
   where
-    bytes = map ByteString.fromString strs
-    -- N.B. must use bytes rather than strs here
-    lengths = map ByteString.length bytes
+    lengths = map ByteString.length strs
     offsets = init $ scanl (+) 0 lengths
-    -- N.B. must use strs rather than bytes here,
-    -- because the ordering used in intern is that of String
     sorted =
       map fst $
       List.sortBy (comparing snd) $
