@@ -3,7 +3,7 @@
 module Corpus(
   Corpus(..), WithCorpus, BNC, withCorpus, loadCorpus,
   stringsFile, sentenceIndexFile, lemmaIndexFile, posIndexFile,
-  sentenceIndex, lemmaIndex,
+  sentenceIndex, lemmaIndex, posIndex,
   Sentence, showSentence, getSentence,
   Token(..), Lexeme(..), lexeme_maybe_lemma, lexeme_maybe_pos,
   Lemma, Text, POS, ClawsTag, SentenceNumber, Position) where
@@ -31,6 +31,9 @@ sentenceIndex = corpus_by_sentence given
 
 lemmaIndex :: Given (Corpus s) => Index (Lemma s, (Position, (SentenceNumber, ()))) (Token s)
 lemmaIndex = corpus_by_lemma given
+
+posIndex :: Given (Corpus s) => Index (POS s, (Position, (SentenceNumber, ()))) (Token s)
+posIndex = corpus_by_pos given
 
 type WithCorpus s = (Given (Corpus s), Given (StrDatabase s))
 withCorpus :: Corpus s -> (WithCorpus s => a) -> a
