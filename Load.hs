@@ -16,7 +16,7 @@ import Data.Vector.Storable.ByteString
 import Data.List(intercalate)
 import Data.List.Split
 
-parseSentence :: StrDatabase s -> Node -> [Lexeme s]
+parseSentence :: StrDatabase BNC -> Node -> [Lexeme]
 parseSentence db el
   | name el `elem` ["s", "mw", "corr", "hi", "trunc"] =
     concatMap (parseSentence db) (children el)
@@ -51,11 +51,11 @@ findElements x n
   | name n == x = [n]
   | otherwise = concatMap (findElements x) (children n)
 
-parseSentences :: StrDatabase s -> Node -> [Sentence s]
+parseSentences :: StrDatabase BNC -> Node -> [Sentence]
 parseSentences db =
   map (parseSentence db) . findElements "s"
 
-parseText :: StrDatabase s -> ByteString -> [Sentence s]
+parseText :: StrDatabase BNC -> ByteString -> [Sentence]
 parseText db x =
   case parse x of
     Left err -> error ("parse error: " ++ show err)
@@ -90,7 +90,7 @@ main = do
   putStrLn "Saving string database..."
   saveStrDatabase db >>= ByteString.writeFile stringsFile
 
-  sentenceIndex <- readData sentenceIndexFile :: IO (Vector (Token ()))
+  sentenceIndex <- readData sentenceIndexFile :: IO (Vector Token)
 
   putStrLn "Generating lemma index..."
   let

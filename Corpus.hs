@@ -19,29 +19,29 @@ import Data.Reflection
 import qualified Data.ByteString as ByteString
 import qualified Data.Vector.Storable as Vector
 
-data Corpus s =
+data Corpus =
   Corpus {
-    corpus_strings :: !(StrDatabase s),
-    corpus_by_sentence :: Index (SentenceNumber, (Position, ())) (Token s),
-    corpus_by_lemma :: Index (Lemma s, (Position, (SentenceNumber, ()))) (Token s),
-    corpus_by_pos :: Index (POS s, (Position, (SentenceNumber, ()))) (Token s) }
+    corpus_strings :: !(StrDatabase BNC),
+    corpus_by_sentence :: Index (SentenceNumber, (Position, ())) Token,
+    corpus_by_lemma :: Index (Lemma, (Position, (SentenceNumber, ()))) Token,
+    corpus_by_pos :: Index (POS, (Position, (SentenceNumber, ()))) Token }
+data BNC
 
-sentenceIndex :: Given (Corpus s) => Index (SentenceNumber, (Position, ())) (Token s)
+sentenceIndex :: Given Corpus => Index (SentenceNumber, (Position, ())) Token
 sentenceIndex = corpus_by_sentence given
 
-lemmaIndex :: Given (Corpus s) => Index (Lemma s, (Position, (SentenceNumber, ()))) (Token s)
+lemmaIndex :: Given Corpus => Index (Lemma, (Position, (SentenceNumber, ()))) Token
 lemmaIndex = corpus_by_lemma given
 
-posIndex :: Given (Corpus s) => Index (POS s, (Position, (SentenceNumber, ()))) (Token s)
+posIndex :: Given Corpus => Index (POS, (Position, (SentenceNumber, ()))) Token
 posIndex = corpus_by_pos given
 
-type WithCorpus s = (Given (Corpus s), Given (StrDatabase s))
-withCorpus :: Corpus s -> (WithCorpus s => a) -> a
+type WithCorpus = (Given Corpus, Given (StrDatabase BNC))
+withCorpus :: Corpus -> (WithCorpus => a) -> a
 withCorpus corpus x =
   give corpus (give (corpus_strings corpus) x)
 
-data BNC
-loadCorpus :: IO (Corpus BNC)
+loadCorpus :: IO Corpus
 loadCorpus = do
   strings <- ByteString.readFile stringsFile >>= loadStrDatabase
   bySentence <-
@@ -67,76 +67,76 @@ lemmaIndexFile = "data/by-lemma"
 posIndexFile = "data/by-pos"
 
 -- A sentence is a list of lexemes.
-type Sentence s = [Lexeme s]
+type Sentence = [Lexeme]
 
-showSentence :: WithCorpus s => Sentence s -> String
+showSentence :: WithCorpus => Sentence -> String
 showSentence xs = do
   x <- xs
   case x of
     Gap -> "<gap> "
     _ -> strValue (lexeme_text x)
 
-getSentence :: WithCorpus s => SentenceNumber -> Sentence s
+getSentence :: WithCorpus => SentenceNumber -> Sentence
 getSentence n =
   map token_lexeme (Vector.toList (get (sentenceIndex ! n)))
 
 -- A token is a lexeme at a particular position in the corpus.
-data Token s =
+data Token =
   Token {
     token_sentence :: {-# UNPACK #-} !SentenceNumber,
     token_position :: {-# UNPACK #-} !Position,
-    token_lexeme :: !(Lexeme s) }
+    token_lexeme :: !Lexeme }
   deriving (Eq, Generic)
 
-deriving instance Given (StrDatabase s) => Show (Token s)
+deriving instance Given (StrDatabase BNC) => Show Token
 
 -- A lexeme is either a word, a punctuation mark, or a
 -- gap (a place where the text is missing).
-data Lexeme s =
+data Lexeme =
   Word {
-    lexeme_lemma :: {-# UNPACK #-} !(Lemma s),
-    lexeme_text :: {-# UNPACK #-} !(Text s),
-    lexeme_pos :: {-# UNPACK #-} !(POS s),
-    lexeme_claws_tag :: {-# UNPACK #-} !(ClawsTag s) } |
+    lexeme_lemma :: {-# UNPACK #-} !Lemma,
+    lexeme_text :: {-# UNPACK #-} !Text,
+    lexeme_pos :: {-# UNPACK #-} !POS,
+    lexeme_claws_tag :: {-# UNPACK #-} !ClawsTag } |
   Punctuation {
-    lexeme_text :: {-# UNPACK #-} !(Text s),
-    lexeme_claws_tag :: {-# UNPACK #-} !(ClawsTag s) } |
+    lexeme_text :: {-# UNPACK #-} !Text,
+    lexeme_claws_tag :: {-# UNPACK #-} !ClawsTag } |
   Gap
   deriving (Eq, Generic)
 
-lexeme_maybe_lemma :: Lexeme s -> Maybe (Lemma s)
+lexeme_maybe_lemma :: Lexeme -> Maybe Lemma
 lexeme_maybe_lemma Word{..} = Just lexeme_lemma
 lexeme_maybe_lemma _ = Nothing
 
-lexeme_maybe_pos :: Lexeme s -> Maybe (POS s)
+lexeme_maybe_pos :: Lexeme -> Maybe POS
 lexeme_maybe_pos Word{..} = Just lexeme_pos
 lexeme_maybe_pos _ = Nothing
 
-deriving instance Given (StrDatabase s) => Show (Lexeme s)
+deriving instance Given (StrDatabase BNC) => Show Lexeme
 
 type SentenceNumber = Int
 type Position = Int
-type Lemma s = Str s
-type Text s = Str s
-type POS s = Str s
-type ClawsTag s = Str s
+type Lemma = Str BNC
+type Text = Str BNC
+type POS = Str BNC
+type ClawsTag = Str BNC
 
 ----------------------------------------------------------------------
 -- Storable instances.
 ----------------------------------------------------------------------
 
-fromToken :: Token s -> (Int, Int, Lexeme s)
+fromToken :: Token -> (Int, Int, Lexeme)
 fromToken (Token x y z) = (x, y, z)
 
-toToken :: (Int, Int, Lexeme s) -> Token s
+toToken :: (Int, Int, Lexeme) -> Token
 toToken (x, y, z) = Token x y z
 
-fromLexeme :: Lexeme s -> (Str s, Str s, Str s, Str s)
+fromLexeme :: Lexeme -> (Str BNC, Str BNC, Str BNC, Str BNC)
 fromLexeme (Word a b c d) = (a, b, c, d)
 fromLexeme (Punctuation a b) = (invalidStr, invalidStr, a, b)
 fromLexeme Gap = (invalidStr, invalidStr, invalidStr, invalidStr)
 
-toLexeme :: (Str s, Str s, Str s, Str s) -> Lexeme s
+toLexeme :: (Str BNC, Str BNC, Str BNC, Str BNC) -> Lexeme
 toLexeme (a, b, c, d)
   | a == invalidStr && b == invalidStr && c == invalidStr && d == invalidStr =
     Gap
@@ -148,13 +148,13 @@ toLexeme (a, b, c, d)
 invalidStr :: Str s
 invalidStr = Str (-1)
 
-instance Storable (Token s) where
+instance Storable Token where
   sizeOf = sizeOf . fromToken
   alignment = alignment . fromToken
   peek ptr = toToken <$> peek (castPtr ptr)
   poke ptr x = poke (castPtr ptr) (fromToken x)
 
-instance Storable (Lexeme s) where
+instance Storable Lexeme where
   sizeOf = sizeOf . fromLexeme
   alignment = alignment . fromLexeme
   peek ptr = toLexeme <$> peek (castPtr ptr)

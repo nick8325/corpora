@@ -6,9 +6,7 @@ import qualified Data.Vector.Storable as Vector
 import Index
 import Data.Reflection
 
-query ::
-  WithCorpus BNC => 
-  Lemma BNC -> Lemma BNC -> POS BNC -> [Sentence BNC]
+query :: WithCorpus => Lemma -> Lemma -> POS -> [Sentence]
 query w1 w2 w3 =
   map getSentence $
   IntSet.toList $ IntSet.fromList $ do
