@@ -90,14 +90,22 @@ main = do
   putStrLn "Saving string database..."
   saveStrDatabase db >>= ByteString.writeFile stringsFile
 
-  putStrLn "Generating index..."
   sentenceIndex <- readData sentenceIndexFile :: IO (Vector (Token ()))
+
+  putStrLn "Generating lemma index..."
   let
     comp Token{..} =
       (lexeme_maybe_lemma token_lexeme, token_position, token_sentence)
-  
   lemmaIndex <-
     dropWhileMonotone NoGuess (isNothing . lexeme_maybe_lemma . token_lexeme) <$>
     sortBy (comparing comp) sentenceIndex
   writeData lemmaIndexFile lemmaIndex
 
+  putStrLn "Generating POS index..."
+  let
+    comp Token{..} =
+      (lexeme_maybe_pos token_lexeme, token_position, token_sentence)
+  posIndex <-
+    dropWhileMonotone NoGuess (isNothing . lexeme_maybe_lemma . token_lexeme) <$>
+    sortBy (comparing comp) sentenceIndex
+  writeData posIndexFile posIndex

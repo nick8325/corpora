@@ -2,10 +2,10 @@
 {-# LANGUAGE DeriveGeneric, StandaloneDeriving, FlexibleContexts, UndecidableInstances, RankNTypes, RecordWildCards, ConstraintKinds #-}
 module Corpus(
   Corpus(..), WithCorpus, BNC, withCorpus, loadCorpus,
-  stringsFile, sentenceIndexFile, lemmaIndexFile,
+  stringsFile, sentenceIndexFile, lemmaIndexFile, posIndexFile,
   sentenceIndex, lemmaIndex,
   Sentence, showSentence, getSentence,
-  Token(..), Lexeme(..), lexeme_maybe_lemma,
+  Token(..), Lexeme(..), lexeme_maybe_lemma, lexeme_maybe_pos,
   Lemma, Text, POS, ClawsTag, SentenceNumber, Position) where
 
 import Strings
@@ -23,7 +23,8 @@ data Corpus s =
   Corpus {
     corpus_strings :: !(StrDatabase s),
     corpus_by_sentence :: Index (SentenceNumber, (Position, ())) (Token s),
-    corpus_by_lemma :: Index (Lemma s, (Position, (SentenceNumber, ()))) (Token s) }
+    corpus_by_lemma :: Index (Lemma s, (Position, (SentenceNumber, ()))) (Token s),
+    corpus_by_pos :: Index (POS s, (Position, (SentenceNumber, ()))) (Token s) }
 
 sentenceIndex :: Given (Corpus s) => Index (SentenceNumber, (Position, ())) (Token s)
 sentenceIndex = corpus_by_sentence given
@@ -49,12 +50,18 @@ loadCorpus = do
     collate token_position .
     collate token_sentence .
     index <$> readData lemmaIndexFile
-  return (Corpus strings bySentence byLemma)
+  byPOS <-
+    collate (lexeme_pos . token_lexeme) .
+    collate token_position .
+    collate token_sentence .
+    index <$> readData posIndexFile
+  return (Corpus strings bySentence byLemma byPOS)
 
 stringsFile, sentenceIndexFile, lemmaIndexFile :: FilePath
 stringsFile = "data/strings"
 sentenceIndexFile = "data/by-sentence"
 lemmaIndexFile = "data/by-lemma"
+posIndexFile = "data/by-pos"
 
 -- A sentence is a list of lexemes.
 type Sentence s = [Lexeme s]
@@ -97,6 +104,10 @@ data Lexeme s =
 lexeme_maybe_lemma :: Lexeme s -> Maybe (Lemma s)
 lexeme_maybe_lemma Word{..} = Just lexeme_lemma
 lexeme_maybe_lemma _ = Nothing
+
+lexeme_maybe_pos :: Lexeme s -> Maybe (POS s)
+lexeme_maybe_pos Word{..} = Just lexeme_pos
+lexeme_maybe_pos _ = Nothing
 
 deriving instance Given (StrDatabase s) => Show (Lexeme s)
 
