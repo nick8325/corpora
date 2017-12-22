@@ -48,6 +48,12 @@ toList (Index key vec) =
   where
     key1 = fst . key
 
+keys :: (Ord k1, Storable a) => Index (k1, k2) a -> [k1]
+keys = map fst . toList
+
+elems :: (Ord k1, Storable a) => Index (k1, k2) a -> [Index k2 a]
+elems = map snd . toList
+
 intersection :: (Storable a, Ord k) => [Index k a] -> Index k a
 intersection idxs =
   foldl1 intersect (List.sortBy (comparing (Vector.length . get)) idxs)
