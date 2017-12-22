@@ -1,69 +1,65 @@
 {-# LANGUAGE OverloadedStrings, BangPatterns, RecordWildCards #-}
-import Text.XML.Light
-import qualified Data.Text as T
-import qualified Data.Text.IO as T
+import Xeno.DOM
 import Strings
 import Vector
 import qualified Data.Vector.Storable as Vector
 import Data.Vector.Storable(Vector)
 import System.Environment
+import Data.ByteString(ByteString)
 import qualified Data.ByteString as ByteString
+import qualified Data.ByteString.UTF8 as ByteString
 import Corpus
 import Data.Ord
 import Data.Maybe
 import System.Directory
 import Data.Vector.Storable.ByteString
+import Data.List(intercalate)
+import Data.List.Split
 
-toTokens :: StrDatabase s -> Element -> [Lexeme s]
-toTokens db el
-  | elName el `elem` [s, mw, corr, hi, trunc] =
-    concatMap (toTokens db) (elChildren el)
-  | elName el `elem` [pb, event, pause, shift, vocal, align] =
+parseSentence :: StrDatabase s -> Node -> [Lexeme s]
+parseSentence db el
+  | name el `elem` ["s", "mw", "corr", "hi", "trunc"] =
+    concatMap (parseSentence db) (children el)
+  | name el `elem` ["pb", "event", "pause", "shift", "vocal", "align"] =
     []
-  | elName el `elem` [gap, unclear] =
+  | name el `elem` ["gap", "unclear"] =
     [Gap]
-  | elName el == c =
+  | name el == "c" =
     [Punctuation {
-      lexeme_text = intern db (strContent el),
-      lexeme_claws_tag = find c5 }]
-  | elName el == w =
+      lexeme_text = intern db (ByteString.toString (strContent el)),
+      lexeme_claws_tag = find "c5" }]
+  | name el == "w" =
     [Word {
-      lexeme_lemma = find hw,
-      lexeme_text = intern db (strContent el),
-      lexeme_pos = find pos,
-      lexeme_claws_tag = find c5 }]
+      lexeme_lemma = find "hw",
+      lexeme_text = intern db (ByteString.toString (strContent el)),
+      lexeme_pos = find "pos",
+      lexeme_claws_tag = find "c5" }]
   | otherwise =
     error $ "Unrecognised token: " ++ show el
   where
-    s = unqual "s"
-    mw = unqual "mw"
-    gap = unqual "gap"
-    corr = unqual "corr"
-    pb = unqual "pb"
-    hi = unqual "hi"
-    pause = unqual "pause"
-    vocal = unqual "vocal"
-    align = unqual "align"
-    shift = unqual "shift"
-    event = unqual "event"
-    trunc = unqual "trunc"
-    unclear = unqual "unclear"
-    c = unqual "c"
-    w = unqual "w"
-    c5 = unqual "c5"
-    pos = unqual "pos"
-    hw = unqual "hw"
-    find x = intern db (fromJust (findAttr x el))
+    find x = intern db (ByteString.toString (fromJust (lookup x (attributes el))))
 
-sentences :: StrDatabase s -> Element -> [Sentence s]
-sentences db =
-  map (toTokens db) . filterElements p
+strContent :: Node -> ByteString
+strContent n = ByteString.concat (concatMap text (contents n))
   where
-    p x = elName x == unqual "s"
+    text (Element _) = []
+    text (Text x) = [x]
+    text (CData x) = [x]
 
-parse :: StrDatabase s -> T.Text -> [Sentence s]
-parse db =
-  sentences db . fromMaybe (error "parse error") . parseXMLDoc
+findElements :: ByteString -> Node -> [Node]
+findElements x n
+  | name n == x = [n]
+  | otherwise = concatMap (findElements x) (children n)
+
+parseSentences :: StrDatabase s -> Node -> [Sentence s]
+parseSentences db =
+  map (parseSentence db) . findElements "s"
+
+parseText :: StrDatabase s -> ByteString -> [Sentence s]
+parseText db x =
+  case parse x of
+    Left err -> error ("parse error: " ++ show err)
+    Right x -> parseSentences db x
 
 main = do
   files <- getArgs
@@ -77,7 +73,7 @@ main = do
     process n [] = return ()
     process n (file:files) = do
       putStrLn ("Loading " ++ file ++ "...")
-      sentences <- parse db <$> T.readFile file
+      sentences <- parseText db <$> ByteString.readFile file
       let
         tokens =
           Vector.fromList
