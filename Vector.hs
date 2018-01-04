@@ -57,7 +57,7 @@ sortBy comp vec =
         Vector.copy (Mutable.slice i n input) $
           Vector.slice i n vec
         Intro.sortBy comp (Mutable.slice i n input)
-        log (i+1)
+        log i
 
     -- Merging
     let
