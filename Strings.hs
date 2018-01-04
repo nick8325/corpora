@@ -1,8 +1,8 @@
 -- Interned strings, backed by an on-disk database.
 {-# LANGUAGE DeriveGeneric, FlexibleContexts, UndecidableInstances, RecordWildCards, BangPatterns, GeneralizedNewtypeDeriving #-}
 module Strings(
-  Str(..), strId, strValue, strValueBS, StrDatabase,
-  newStrDatabase, loadStrDatabase, saveStrDatabase,
+  Str(..), strId, strValue, strValueBS,
+  StrDatabase, newStrDatabase, loadStrDatabase, saveStrDatabase,
   intern, internBS, unintern, uninternBS) where
 
 import qualified Data.Vector.Storable as Vector
