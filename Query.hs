@@ -4,12 +4,14 @@ import System.TimeIt
 import Corpus
 import qualified Data.Vector.Storable as Vector
 import Index
+import Strings
 import Data.Reflection
+import Text.Regex.TDFA
+import qualified Data.ByteString.UTF8 as ByteString
 
 query :: WithCorpus => Lemma -> Lemma -> POS -> [Sentence]
 query w1 w2 w3 =
-  map getSentence $
-  IntSet.toList $ IntSet.fromList $ do
+  map getSentence $ do
     -- w1 .... w2 w3
     let w1_occ = lemmaIndex ! w1
     (i, w1_is) <- toList w1_occ
@@ -19,7 +21,21 @@ query w1 w2 w3 =
     -- (k, w3_ks) <- toList w3_occ
     map token_sentence (Vector.toList (get (intersection [w1_is, w2_js, w3_occ])))
 
+query2 :: WithCorpus => [Lemma] -> [Sentence]
+query2 ws =
+  map getSentence $ IntSet.toList $ IntSet.fromList $ do
+    is <- aux 0 ws
+    map token_sentence (Vector.toList (get (intersection is)))
+  where
+    aux _ [] = return []
+    aux i (w:ws) = do
+      let occ = filterGT i (lemmaIndex ! w)
+      (j, js) <- toList occ
+      kss <- aux j ws
+      return (js:kss)
+
 main = do
   corpus <- loadCorpus
-  withCorpus corpus $
-    timeIt (mapM_ (putStrLn . showSentence) (query "cat" "the" "SUBST"))
+  withCorpus corpus $ do
+    mapM_ (putStrLn . showSentence) (query "cat" "the" "SUBST")
+    --mapM_ (putStrLn . showSentence . getSentence) [ k | (k, x) <- Index.toList sentenceIndex, length (Index.elems x) >= 800]
