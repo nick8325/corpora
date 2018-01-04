@@ -15,6 +15,8 @@ import Control.Monad
 import Foreign.Storable
 import System.IO.Unsafe
 import System.IO.Temp
+import System.IO
+import System.Mem
 
 import Test.QuickCheck
 import qualified Data.List as List
@@ -38,16 +40,24 @@ sortBy comp vec =
     let
       n = Vector.length vec
       ss = slices n
+      step xs mx = do
+        hPutStr stderr (xs ++ ": ")
+        x <- mx
+        hPutStrLn stderr ""
+        return x
+      log xs = hPutStr stderr (show xs ++ " ")
 
     -- Create two temporary vectors to ping-pong between
     input  <- unsafeMMapMVector file1 ReadWriteEx (Just (0, n))
     output <- unsafeMMapMVector file2 ReadWriteEx (Just (0, n))
 
     -- Chop the vector into slices and sort the slices
-    forM_ ss $ \(i, n) -> do
-      Vector.copy (Mutable.slice i n input) $
-        Vector.slice i n vec
-      Intro.sortBy comp (Mutable.slice i n input)
+    step ("Sorting " ++ show (length ss) ++ " slices") $
+      forM_ ss $ \(i, n) -> do
+        Vector.copy (Mutable.slice i n input) $
+          Vector.slice i n vec
+        Intro.sortBy comp (Mutable.slice i n input)
+        log (i+1)
 
     -- Merging
     let
@@ -56,6 +66,7 @@ sortBy comp vec =
         Vector.copy (Mutable.slice i n output) (Vector.slice i n input)
         return [(i, n)]
       pass input output ((i1, n1):(i2, n2):xs) = do
+        log i1
         merge comp
           (Vector.slice i1 n1 input)
           (Vector.slice i2 n2 input)
@@ -65,8 +76,11 @@ sortBy comp vec =
       passes minput output [] = Vector.unsafeFreeze minput
       passes minput output [_] = Vector.unsafeFreeze minput
       passes minput output xs = do
+        performGC
         input <- Vector.unsafeFreeze minput
-        ys <- pass input output xs
+        ys <-
+          step ("Merging " ++ show (length xs) ++ " slices") $
+            pass input output xs
         passes output minput ys
 
     passes input output ss

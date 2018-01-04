@@ -2,8 +2,8 @@
 {-# LANGUAGE DeriveGeneric, StandaloneDeriving, FlexibleContexts, UndecidableInstances, RankNTypes, RecordWildCards, ConstraintKinds #-}
 module Corpus(
   Corpus(..), WithCorpus, BNC, withCorpus, loadCorpus,
-  stringsFile, sentenceIndexFile, lemmaIndexFile, posIndexFile,
-  sentenceIndex, lemmaIndex, posIndex,
+  dataDir, stringsFile, sentenceIndexFile, lemmaIndexFile, posIndexFile,
+  sentenceIndex, lemmaIndex, posIndex, sentenceKey, lemmaKey, posKey,
   Sentence, showSentence, getSentence,
   Token(..), Lexeme(..), lexeme_maybe_lemma, lexeme_maybe_pos,
   Lemma, Text, POS, ClawsTag, SentenceNumber, Position) where
@@ -22,18 +22,30 @@ import qualified Data.Vector.Storable as Vector
 data Corpus =
   Corpus {
     corpus_strings :: !(StrDatabase BNC),
-    corpus_by_sentence :: Index (SentenceNumber, (Position, ())) Token,
-    corpus_by_lemma :: Index (Lemma, (Position, (SentenceNumber, ()))) Token,
-    corpus_by_pos :: Index (POS, (Position, (SentenceNumber, ()))) Token }
+    corpus_by_sentence :: Index SentenceKey Token,
+    corpus_by_lemma :: Index LemmaKey Token,
+    corpus_by_pos :: Index POSKey Token }
 data BNC
+type SentenceKey = (SentenceNumber, (Position, ()))
+type LemmaKey = (Lemma, (Position, (SentenceNumber, ())))
+type POSKey = (POS, (Position, (SentenceNumber, ())))
 
-sentenceIndex :: Given Corpus => Index (SentenceNumber, (Position, ())) Token
+sentenceKey :: Token -> SentenceKey
+sentenceKey Token{..} = (token_sentence, (token_position, ()))
+
+lemmaKey :: Token -> LemmaKey
+lemmaKey Token{..} = (lexeme_lemma token_lexeme, (token_position, (token_sentence, ())))
+
+posKey :: Token -> POSKey
+posKey Token{..} = (lexeme_pos token_lexeme, (token_position, (token_sentence, ())))
+
+sentenceIndex :: Given Corpus => Index SentenceKey Token
 sentenceIndex = corpus_by_sentence given
 
-lemmaIndex :: Given Corpus => Index (Lemma, (Position, (SentenceNumber, ()))) Token
+lemmaIndex :: Given Corpus => Index LemmaKey Token
 lemmaIndex = corpus_by_lemma given
 
-posIndex :: Given Corpus => Index (POS, (Position, (SentenceNumber, ()))) Token
+posIndex :: Given Corpus => Index POSKey Token
 posIndex = corpus_by_pos given
 
 type WithCorpus = (Given Corpus, Given (StrDatabase BNC))
@@ -44,23 +56,13 @@ withCorpus corpus x =
 loadCorpus :: IO Corpus
 loadCorpus = do
   strings <- ByteString.readFile stringsFile >>= loadStrDatabase
-  bySentence <-
-    collate token_sentence .
-    collate token_position .
-    index <$> readData sentenceIndexFile
-  byLemma <-
-    collate (lexeme_lemma . token_lexeme) .
-    collate token_position .
-    collate token_sentence .
-    index <$> readData lemmaIndexFile
-  byPOS <-
-    collate (lexeme_pos . token_lexeme) .
-    collate token_position .
-    collate token_sentence .
-    index <$> readData posIndexFile
+  bySentence <- Index sentenceKey <$> readData sentenceIndexFile
+  byLemma <- Index lemmaKey <$> readData lemmaIndexFile
+  byPOS <- Index posKey <$> readData posIndexFile
   return (Corpus strings bySentence byLemma byPOS)
 
-stringsFile, sentenceIndexFile, lemmaIndexFile :: FilePath
+dataDir, stringsFile, sentenceIndexFile, lemmaIndexFile :: FilePath
+dataDir = "data"
 stringsFile = "data/strings"
 sentenceIndexFile = "data/by-sentence"
 lemmaIndexFile = "data/by-lemma"

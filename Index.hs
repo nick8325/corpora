@@ -13,13 +13,6 @@ data Index k a =
     key :: a -> k,
     get :: Vector a }
 
-index :: Vector a -> Index () a
-index vec = Index (const ()) vec
-
-collate :: (a -> k1) -> Index k2 a -> Index (k1, k2) a
-collate key1 (Index key2 vec) =
-  Index (\x -> (key1 x, key2 x)) vec
-
 {-# INLINEABLE (!) #-}
 (!) :: (Ord k1, Storable a) => Index (k1, k2) a -> k1 -> Index k2 a
 Index key vec ! k =

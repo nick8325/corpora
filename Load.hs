@@ -63,7 +63,8 @@ parseText db x =
 
 main = do
   files <- getArgs
-  createDirectoryIfMissing False "data"
+
+  createDirectoryIfMissing False dataDir
   db <- newStrDatabase
 
   -- We write the main data file incrementally, to save memory
@@ -91,21 +92,15 @@ main = do
   saveStrDatabase db >>= ByteString.writeFile stringsFile
 
   sentenceIndex <- readData sentenceIndexFile :: IO (Vector Token)
+  putStrLn "Filtering out boring tokens..."
+  let boring = isNothing . lexeme_maybe_lemma . token_lexeme
+  filtered <-
+    dropWhileSorted NearStart boring <$> sortBy (comparing (not . boring)) sentenceIndex
 
   putStrLn "Generating lemma index..."
-  let
-    comp Token{..} =
-      (lexeme_maybe_lemma token_lexeme, token_position, token_sentence)
-  lemmaIndex <-
-    dropWhileMonotone NoGuess (isNothing . lexeme_maybe_lemma . token_lexeme) <$>
-    sortBy (comparing comp) sentenceIndex
+  lemmaIndex <- sortBy (comparing lemmaKey) filtered
   writeData lemmaIndexFile lemmaIndex
 
   putStrLn "Generating POS index..."
-  let
-    comp Token{..} =
-      (lexeme_maybe_pos token_lexeme, token_position, token_sentence)
-  posIndex <-
-    dropWhileMonotone NoGuess (isNothing . lexeme_maybe_lemma . token_lexeme) <$>
-    sortBy (comparing comp) sentenceIndex
+  posIndex <- sortBy (comparing posKey) filtered
   writeData posIndexFile posIndex
