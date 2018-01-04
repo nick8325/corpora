@@ -9,9 +9,17 @@ import Data.Reflection
 import Text.Regex.TDFA
 import qualified Data.ByteString.UTF8 as ByteString
 
+uniq :: [Int] -> [Int]
+uniq xs = go xs IntSet.empty
+  where
+    go [] _ = []
+    go (x:xs) s
+      | x `IntSet.member` s = go xs s
+      | otherwise = x:go xs (IntSet.insert x s)
+
 query :: WithCorpus => Lemma -> Lemma -> POS -> [Sentence]
 query w1 w2 w3 =
-  map getSentence $ do
+  map getSentence $ uniq $ do
     -- w1 .... w2 w3
     let w1_occ = lemmaIndex ! w1
     (i, w1_is) <- toList w1_occ
