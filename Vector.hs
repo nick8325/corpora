@@ -83,7 +83,7 @@ sortBy comp vec =
             pass input output xs
         passes output minput ys
 
-    passes input output ss
+    passes input output ss <* performGC
 
 slices :: Int -> [(Int, Int)]
 slices n = from 0

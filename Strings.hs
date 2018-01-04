@@ -2,7 +2,7 @@
 {-# LANGUAGE DeriveGeneric, FlexibleContexts, UndecidableInstances, RecordWildCards, BangPatterns, GeneralizedNewtypeDeriving #-}
 module Strings(
   Str(..), strId, strValue, strValueBS,
-  StrDatabase, newStrDatabase, loadStrDatabase, saveStrDatabase,
+  StrDatabase, newStrDatabase, loadStrDatabase, saveStrDatabase, compactStrDatabase,
   intern, internBS, unintern, uninternBS) where
 
 import qualified Data.Vector.Storable as Vector
@@ -27,6 +27,7 @@ import qualified Data.List as List
 import Data.Ord
 import Foreign.Storable
 import Data.Int
+import Control.Monad
 
 -- An interned string is really just a number.
 -- The phantom type parameter represents the particular database.
@@ -171,6 +172,16 @@ loadStrDatabase str =
 saveStrDatabase :: StrDatabase s -> IO ByteString
 saveStrDatabase db =
   ByteString.toStrict <$> encode <$> diskContentsFrom <$> databaseContents db
+
+-- Compact the database to save memory.
+compactStrDatabase :: StrDatabase s -> IO ()
+compactStrDatabase db@(StrDatabase ref) = do
+  Contents{contents_memory = MemoryContents{..}} <- readIORef ref
+  let
+    fullness = fromIntegral (IntMap.size mc_unintern) / fromIntegral (mc_next+1)
+  when (fullness >= 0.2) $ do
+    StrDatabase ref' <- saveStrDatabase db >>= loadStrDatabase
+    readIORef ref' >>= writeIORef ref
 
 -- Get all strings stored in the database.
 databaseContents :: StrDatabase s -> IO [ByteString]

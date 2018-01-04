@@ -83,6 +83,7 @@ main = do
             (j, lexeme) <- zip [0..] sentence ]
 
       ByteString.appendFile sentenceIndexFile (vectorToByteString tokens)
+      compactStrDatabase db
 
       process (n+length sentences) files
     
