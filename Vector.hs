@@ -2,8 +2,7 @@
 -- Miscellaneous vector functions.
 module Vector(
   uncons, sort, sortBy, writeData, readData,
-  Guess(..), countWhileMonotone,
-  takeWhileMonotone, dropWhileMonotone, spanMonotone, findMonotone) where
+  Guess(..), countWhileSorted, takeWhileSorted, dropWhileSorted, spanSorted, findSorted) where
 
 import Data.Vector.Storable(Vector)
 import Data.Vector.Storable.Mutable(IOVector)
@@ -101,9 +100,9 @@ merge comp !in1 !in2 !out =
 
 data Guess = NearStart | NearEnd | NoGuess
 
-{-# INLINEABLE countWhileMonotone #-}
-countWhileMonotone :: Storable a => Guess -> (a -> Bool) -> Vector a -> Int
-countWhileMonotone guess p vec =
+{-# INLINEABLE countWhileSorted #-}
+countWhileSorted :: Storable a => Guess -> (a -> Bool) -> Vector a -> Int
+countWhileSorted guess p vec =
   unsafeDupablePerformIO $ do
     let q = not . p
     mvec <- Vector.unsafeThaw vec
@@ -112,32 +111,32 @@ countWhileMonotone guess p vec =
       NearEnd   -> gallopingSearchRightP q mvec
       NoGuess   -> binarySearchP q mvec
 
-{-# INLINE takeWhileMonotone #-}
-takeWhileMonotone :: Storable a => Guess -> (a -> Bool) -> Vector a -> Vector a
-takeWhileMonotone guess p vec =
+{-# INLINE takeWhileSorted #-}
+takeWhileSorted :: Storable a => Guess -> (a -> Bool) -> Vector a -> Vector a
+takeWhileSorted guess p vec =
   Vector.take n vec
   where
-    n = countWhileMonotone guess p vec
+    n = countWhileSorted guess p vec
 
-{-# INLINE dropWhileMonotone #-}
-dropWhileMonotone :: Storable a => Guess -> (a -> Bool) -> Vector a -> Vector a
-dropWhileMonotone guess p vec =
+{-# INLINE dropWhileSorted #-}
+dropWhileSorted :: Storable a => Guess -> (a -> Bool) -> Vector a -> Vector a
+dropWhileSorted guess p vec =
   Vector.drop n vec
   where
-    n = countWhileMonotone guess p vec
+    n = countWhileSorted guess p vec
 
-{-# INLINE spanMonotone #-}
-spanMonotone :: Storable a => Guess -> (a -> Bool) -> Vector a -> (Vector a, Vector a)
-spanMonotone guess p vec =
+{-# INLINE spanSorted #-}
+spanSorted :: Storable a => Guess -> (a -> Bool) -> Vector a -> (Vector a, Vector a)
+spanSorted guess p vec =
   Vector.splitAt n vec
   where
-    n = countWhileMonotone guess p vec
+    n = countWhileSorted guess p vec
 
-{-# INLINEABLE findMonotone #-}
-findMonotone :: (Storable a, Ord b) => Guess -> (a -> b) -> b -> Vector a -> Vector a
-findMonotone guess f x vec =
-  takeWhileMonotone NearStart (\y -> f y <= x) $
-  dropWhileMonotone guess (\y -> f y < x) vec
+{-# INLINEABLE findSorted #-}
+findSorted :: (Storable a, Ord b) => Guess -> (a -> b) -> b -> Vector a -> Vector a
+findSorted guess f x vec =
+  takeWhileSorted NearStart (\y -> f y <= x) $
+  dropWhileSorted guess (\y -> f y < x) vec
 
 {-# INLINEABLE writeData #-}
 writeData :: Storable a => FilePath -> Vector a -> IO ()

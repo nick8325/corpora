@@ -100,7 +100,7 @@ internBS (StrDatabase ref) !str =
 
 internContents :: Contents -> ByteString -> (Contents, Str s)
 internContents contents@Contents{contents_disk = disk@DiskContents{..}, contents_memory = MemoryContents{..}} str =
-  case Vector.toList (findMonotone NoGuess (readString disk) str dc_sorted) of
+  case Vector.toList (findSorted NoGuess (readString disk) str dc_sorted) of
     [n] -> (contents, Str (fromIntegral n))
     [] ->
       case Map.lookup str mc_intern of

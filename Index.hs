@@ -24,7 +24,7 @@ collate key1 (Index key2 vec) =
 (!) :: (Ord k1, Storable a) => Index (k1, k2) a -> k1 -> Index k2 a
 Index key vec ! k =
   Index (snd . key) $
-    findMonotone NoGuess key1 k vec
+    findSorted NoGuess key1 k vec
   where
     key1 = fst . key
 
@@ -32,7 +32,7 @@ Index key vec ! k =
 filterGT :: (Ord k1, Storable a) => k1 -> Index (k1, k2) a -> Index (k1, k2) a
 filterGT k (Index key vec) =
   Index key $
-    dropWhileMonotone NoGuess (\x -> key1 x <= k) $
+    dropWhileSorted NoGuess (\x -> key1 x <= k) $
     vec
   where
     key1 = fst . key
@@ -45,7 +45,7 @@ toList (Index key vec) =
     Just (x, _) ->
       let
         k = key1 x
-        (vec1, vec2) = spanMonotone NearStart (\y -> key1 y <= k) vec
+        (vec1, vec2) = spanSorted NearStart (\y -> key1 y <= k) vec
       in
         (k, Index (snd . key) vec1):toList (Index key vec2)
   where
@@ -80,8 +80,8 @@ intersect (Index key vec1) (Index _ vec2) =
           case compare fx fy of
             EQ -> x:mergeChunks key rest1 rest2
             LT ->
-              let vec1' = dropWhileMonotone NearStart (\x' -> key x' < fy) vec1 in
+              let vec1' = dropWhileSorted NearStart (\x' -> key x' < fy) vec1 in
               mergeChunks key vec1' vec2
             GT ->
-              let vec2' = dropWhileMonotone NearStart (\y' -> key y' < fx) vec2 in
+              let vec2' = dropWhileSorted NearStart (\y' -> key y' < fx) vec2 in
               mergeChunks key vec1 vec2'
