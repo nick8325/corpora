@@ -1,0 +1,31 @@
+name:                corpora
+version:             0.1.0.0
+license:             BSD3
+license-file:        LICENSE
+author:              Nick Smallbone
+maintainer:          nick@smallbone.se
+build-type:          Simple
+extra-source-files:  ChangeLog.md, README
+cabal-version:       >=1.10
+
+executable Load
+  main-is:             Load.hs
+  build-depends:       base >=4, bytestring, directory, containers,
+                       binary, QuickCheck, vector, vector-algorithms,
+                       temporary, vector-mmap, reflection,
+                       utf8-string, vector-binary-instances,
+                       storable-tuple, xeno, split,
+                       bytestring-to-vector
+  other-modules: Corpus Index Strings Vector
+  default-language:    Haskell2010
+
+executable Query
+  main-is:             Query.hs
+  build-depends:       base >=4, bytestring, directory, containers,
+                       binary, QuickCheck, vector, vector-algorithms,
+                       temporary, vector-mmap, reflection,
+                       utf8-string, vector-binary-instances,
+                       storable-tuple, timeit, regex-tdfa
+  other-modules: Corpus Index Strings Vector
+
+  default-language:    Haskell2010
