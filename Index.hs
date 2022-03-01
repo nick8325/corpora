@@ -30,6 +30,10 @@ filterGT k (Index key vec) =
   where
     key1 = fst . key
 
+{-# INLINEABLE contents #-}
+contents :: Storable a => Index k a -> [a]
+contents = Vector.toList . get
+
 {-# INLINEABLE toList #-}
 toList :: (Ord k1, Storable a) => Index (k1, k2) a -> [(k1, Index k2 a)]
 toList (Index key vec) =
@@ -43,6 +47,15 @@ toList (Index key vec) =
         (k, Index (snd . key) vec1):toList (Index key vec2)
   where
     key1 = fst . key
+
+{-# INLINEABLE counts #-}
+counts :: (Ord k1, Storable a) => Index (k1, k2) a -> [(k1, Int)]
+counts idx = [(k, size idx') | (k, idx') <- toList idx]
+
+{-# INLINEABLE size #-}
+size :: Storable a => Index k a -> Int
+size (Index _ vec) =
+  Vector.length vec
 
 {-# INLINEABLE keys #-}
 keys :: (Ord k1, Storable a) => Index (k1, k2) a -> [k1]

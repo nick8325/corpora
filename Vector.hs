@@ -35,8 +35,8 @@ sort = sortBy compare
 {-# INLINEABLE sortBy #-}
 sortBy :: Storable a => (a -> a -> Ordering) -> Vector a -> IO (Vector a)
 sortBy comp vec =
-  withSystemTempFile "sort1" $ \file1 _ ->
-  withSystemTempFile "sort2" $ \file2 _ -> do
+  withTempFile "." "sort1" $ \file1 _ ->
+  withTempFile "." "sort2" $ \file2 _ -> do
     let
       n = Vector.length vec
       ss = slices n

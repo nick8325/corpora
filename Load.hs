@@ -65,10 +65,11 @@ main = do
   files <- getArgs
 
   createDirectoryIfMissing False dataDir
-  db <- newStrDatabase
+  --db <- newStrDatabase
+  db <- ByteString.readFile stringsFile >>= loadStrDatabase
 
   -- We write the main data file incrementally, to save memory
-  writeFile sentenceIndexFile ""
+  --writeFile sentenceIndexFile ""
 
   let
     process n [] = return ()
@@ -87,10 +88,10 @@ main = do
 
       process (n+length sentences) files
     
-  process 0 files
+  --process 0 files
 
-  putStrLn "Saving string database..."
-  saveStrDatabase db >>= ByteString.writeFile stringsFile
+  --putStrLn "Saving string database..."
+  --saveStrDatabase db >>= ByteString.writeFile stringsFile
 
   sentenceIndex <- readData sentenceIndexFile :: IO (Vector Token)
   putStrLn "Filtering out boring tokens..."
