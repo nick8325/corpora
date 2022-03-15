@@ -28,10 +28,12 @@ import Data.Ord
 import Foreign.Storable
 import Data.Int
 import Control.Monad
+import Data.Hashable
+import Data.Binary
 
 -- An interned string is really just a number.
 -- The phantom type parameter represents the particular database.
-newtype Str s = Str Int32 deriving (Eq, Ord, Storable)
+newtype Str s = Str Int32 deriving (Eq, Ord, Storable, Hashable, Binary)
 
 strId :: Str s -> Int
 strId (Str n) = fromIntegral n
