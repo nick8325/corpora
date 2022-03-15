@@ -24,6 +24,7 @@ import Data.Int
 import Foreign.Ptr
 import Vector
 import Data.Ord
+import Database.SQLite.Simple
 
 data WordFeature =
     Text {-# UNPACK #-} !Text
@@ -51,12 +52,12 @@ toWordFeature (x, 1) = (Lemma x)
 toWordFeature (x, 2) = (POS x)
 
 fromFeature :: Feature -> (WordFeature, WordFeature, Int8)
-fromFeature (WordFeature f) = (f, f, (-1))
+fromFeature (WordFeature f) = (f, f, 0)
 fromFeature (Plus w1 n w2) = (w1, w2, fromIntegral n)
 
 toFeature :: (WordFeature, WordFeature, Int8) -> Feature
 toFeature (w1, w2, n)
-  | n == -1 = WordFeature w1
+  | n == 0 || n == -1 = WordFeature w1
   | otherwise = Plus w1 (fromIntegral n) w2
 
 instance Storable WordFeature where
@@ -100,6 +101,25 @@ indexFeatures p sentences =
 main = do
   corpus <- loadCorpus
   withCorpus corpus $ do
+    fs <- readData "data/all-features-unsorted" :: IO (Vector.Vector (Feature, (SentenceNumber, ())))
+    db <- open "features.db"
+--    execute_ db "create table features(id integer primary key, word1 integer not null, kind1 integer not null, distance integer not null, word2 integer not null, kind2 integer not null, unique(word1, kind1, distance, word2, kind2))"
+--    withTransaction db $ do
+--      executeMany db "insert or ignore into features(word1, kind1, distance, word2, kind2) values(?, ?, ?, ?, ?)"
+--        [ (strId word1, kind1, distance, strId word2, kind2)
+--        | (f, (s, ())) <- Vector.toList fs,
+--          let (wf1, wf2, distance) = fromFeature f,
+--          let (word1, kind1) = fromWordFeature wf1,
+--          let (word2, kind2) = fromWordFeature wf2 ]
+    --execute_ db "create table sentencefeatures(feature integer not null references features(id), sentence integer not null, primary key(feature, sentence))"
+    features <- fold_ db "select id, word1, kind1, distance, word2, kind2 from features" Map.empty
+      (\m (id :: Int, w1, k1, d, w2, k2) -> return $! (Map.insert (toFeature (toWordFeature (Str w1, k1), toWordFeature (Str w2, k2), d)) id m))
+    putStrLn "read features"
+    withTransaction db $ do
+      executeMany db "insert or ignore into sentencefeatures(feature, sentence) values(?, ?)"
+        [ (Map.findWithDefault undefined f features, s)
+        | (f, (s, ())) <- Vector.toList fs ]
+
 --    fs <- readData "data/all-features" :: IO (Vector.Vector (Feature, (SentenceNumber, ())))
 --    let idx = Index id fs
 --    let query = [WordFeature (POS "ADJ"),
@@ -111,8 +131,8 @@ main = do
 --    let result = intersection [idx ! f | f <- query]
 --    mapM_ (putStrLn . showSentence . getSentence) (keys result)
 
-    fs <- readData "data/all-features-unsorted" :: IO (Vector.Vector (Feature, (SentenceNumber, ())))
-    Vector.sort fs >>= writeData "data/all-features"
+--    fs <- readData "data/all-features-unsorted" :: IO (Vector.Vector (Feature, (SentenceNumber, ())))
+--    Vector.sort fs >>= writeData "data/all-features"
 --    writeFile "data/all-features-unsorted" ""
 --    forM_ (chunk 100000 [(f, (s, ())) | s <- keys sentenceIndex, f <- features (getSentence s)]) $ \fs ->
 --      ByteString.appendFile "data/all-features-unsorted" (vectorToByteString (Vector.fromList fs))
